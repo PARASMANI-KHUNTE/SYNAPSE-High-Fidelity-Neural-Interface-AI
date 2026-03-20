@@ -1,9 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, ImagePlus, Mic, X, Loader2, Volume2, VolumeX, Square, FileText, Zap, ExternalLink } from 'lucide-react';
+import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
-export default function InputBar({ onSend, onStop, onStopAudio, isTyping, isSpeaking, disabled }) {
+export default function InputBar({ onSendMessage, onStopMessage, onStopAudio, isTyping, isSpeaking, disabled, suggestion, onSuggest, clearSuggestion }) {
   const [input, setInput] = useState('');
+  const suggestTimeoutRef = useRef(null);
+
+  // 🧠 Neural Autocomplete Logic (Debounced)
+  useEffect(() => {
+    if (input.length > 5 && onSuggest) {
+      if (suggestTimeoutRef.current) clearTimeout(suggestTimeoutRef.current);
+      suggestTimeoutRef.current = setTimeout(() => {
+        onSuggest(input);
+      }, 1000);
+    } else {
+      clearSuggestion?.();
+    }
+  }, [input, onSuggest, clearSuggestion]);
   const [file, setFile] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -56,10 +70,11 @@ export default function InputBar({ onSend, onStop, onStopAudio, isTyping, isSpea
     
     // Read current settings from localStorage
     const voicePref = localStorage.getItem('voice_gender') || 'male';
-    onSend(input, fileUrl, fileType, voicePref);
+    onSendMessage(input, fileUrl, fileType, voicePref);
     
     setInput('');
     setFile(null);
+    clearSuggestion?.();
   };
 
   const handleKeyDown = (e) => {
@@ -113,10 +128,25 @@ export default function InputBar({ onSend, onStop, onStopAudio, isTyping, isSpea
         : "border-slate-700/80 shadow-black/20 focus-within:ring-2 focus-within:ring-blue-500/50"
     )}>
       
-      {/* Subtle Voice Waveform (Overlay) */}
+      {/* 🚀 SCI-FI NEURAL WAVEFORM (GLOBAL BROADCAST) */}
       {isSpeaking && (
-        <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none opacity-30">
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-[pulse_1.5s_infinite]"></div>
+        <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none flex items-end justify-center pb-1 gap-[2px]">
+          {[...Array(20)].map((_, i) => (
+            <motion.div
+              key={i}
+              animate={{ 
+                height: [2, 6 + Math.random() * 12, 4, 8 + Math.random() * 10, 2],
+                opacity: [0.2, 0.6, 0.2]
+              }}
+              transition={{ 
+                duration: 0.6 + (i % 3) * 0.15, 
+                repeat: Infinity, 
+                ease: "easeInOut",
+                delay: i * 0.03
+              }}
+              className="w-[2px] bg-cyan-400/40 rounded-full"
+            />
+          ))}
         </div>
       )}
 
@@ -211,15 +241,32 @@ export default function InputBar({ onSend, onStop, onStopAudio, isTyping, isSpea
           <Mic size={22} />
         </button>
 
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={disabled ? "AI is typing..." : isRecording ? "Speak now (transcribing live)..." : "Message OS Assistant..."}
-          className="flex-1 max-h-48 min-h-[44px] bg-transparent text-slate-100 placeholder-slate-500 font-sans text-sm resize-none outline-none py-3"
-          rows={1}
-          disabled={disabled}
-        />
+        <div className="relative flex-1 flex flex-col">
+          {suggestion && !disabled && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="absolute -top-10 left-0 bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide cursor-pointer hover:bg-cyan-500/30 transition-all flex items-center gap-2 group/suggest shadow-xl shadow-cyan-500/10 z-50 backdrop-blur-md"
+              onClick={() => {
+                setInput(input.trim() + " " + suggestion);
+                clearSuggestion?.();
+              }}
+            >
+              <Zap size={10} className="text-cyan-400 animate-pulse" />
+              <span>{suggestion}</span>
+              <span className="text-[8px] opacity-40 ml-1 group-hover/suggest:opacity-100 transition-opacity uppercase tracking-widest font-black">Neural Complete</span>
+            </motion.div>
+          )}
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={disabled ? "SYNAPSE is processing..." : isRecording ? "Neural Transcription active..." : "Initialize query for SYNAPSE..."}
+            className="w-full max-h-48 min-h-[44px] bg-transparent text-slate-100 placeholder-slate-500 font-sans text-sm resize-none outline-none py-3"
+            rows={1}
+            disabled={disabled}
+          />
+        </div>
 
         <div className="flex items-center gap-2 border-l border-slate-700/50 pl-2 ml-2 h-10">
           {/* Global Voice Toggle */}
@@ -245,7 +292,7 @@ export default function InputBar({ onSend, onStop, onStopAudio, isTyping, isSpea
 
           {(isTyping || isSpeaking) ? (
             <button
-              onClick={() => { onStop?.(); onStopAudio?.(); }}
+              onClick={() => { onStopMessage?.(); onStopAudio?.(); }}
               className="p-2.5 ml-1 shrink-0 bg-red-600 hover:bg-red-500 text-white rounded-xl transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center animate-pulse"
               title="Stop AI"
             >

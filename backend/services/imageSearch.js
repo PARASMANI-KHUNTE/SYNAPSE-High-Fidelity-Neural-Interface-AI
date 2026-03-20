@@ -6,7 +6,7 @@ export const searchReferenceImages = async (query) => {
   try {
     console.log(`🔍 Searching reference images for: "${query}"...`);
     // Using a more reliable image search URL (Bing Images fallback)
-    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}+logo+official&form=HDRSC2&first=1`;
+    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1`;
     
     const response = await axios.get(url, {
       headers: {

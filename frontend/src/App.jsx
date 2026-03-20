@@ -8,9 +8,11 @@ function App() {
   const [socket, setSocket] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [operatorName, setOperatorName] = useState('Operator');
   
   const [chatSessions, setChatSessions] = useState([]);
   const [activeChatId, setActiveChatId] = useState(localStorage.getItem('active_chat_id') || null);
+  const [suggestion, setSuggestion] = useState('');
   
   const [userId] = useState(() => {
     const saved = localStorage.getItem('chat_user_id');
@@ -29,6 +31,14 @@ function App() {
   useEffect(() => {
     const newSocket = io('http://localhost:3000');
     setSocket(newSocket);
+
+    // Fetch Backend Config (Operator Name, etc.)
+    fetch('http://localhost:3000/api/config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.operatorName) setOperatorName(data.operatorName);
+      })
+      .catch(err => console.error("Config fetch failed:", err));
 
     newSocket.on('connect', () => {
       console.log('Connected to backend:', newSocket.id);
@@ -57,9 +67,15 @@ function App() {
           content: m.content,
           imageUrls: m.imageUrls,
           audioUrl: m.audioUrl,
-          isError: m.isError
+          feedback: m.feedback,
+          isError: m.isError,
+          _id: m._id
         })));
       }
+    });
+
+    newSocket.on('chat:suggestion', (data) => {
+      setSuggestion(data.suggestion);
     });
 
     newSocket.on('chat:reply:start', () => {
@@ -194,8 +210,20 @@ function App() {
     setIsTyping(false);
   };
 
+  const handleFeedback = (messageId, type) => {
+    if (socket && activeChatId) {
+      socket.emit('chat:feedback', { chatId: activeChatId, messageId, feedback: type });
+    }
+  };
+
+  const handleSuggest = (input) => {
+    if (socket) {
+      socket.emit('chat:suggest', { input });
+    }
+  };
+
   return (
-    <div className="flex h-screen w-full bg-[#0f172a] text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#020617] text-slate-200 overflow-hidden font-sans selection:bg-cyan-500/30">
       <Sidebar 
         sessions={chatSessions} 
         activeChatId={activeChatId} 
@@ -208,9 +236,14 @@ function App() {
           messages={messages} 
           isTyping={isTyping} 
           isSpeaking={isSpeaking}
+          operatorName={operatorName}
+          suggestion={suggestion}
           onSendMessage={handleSendMessage} 
           onStopMessage={handleStopMessage} 
           onStopAudio={handleStopAudio}
+          onFeedback={handleFeedback}
+          onSuggest={handleSuggest}
+          clearSuggestion={() => setSuggestion('')}
         />
       </div>
     </div>

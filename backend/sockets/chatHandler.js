@@ -58,12 +58,54 @@ export const chatSocketHandler = (io) => {
       }
     });
 
+    // --- NEW: Synaptic Feedback ---
+    socket.on("chat:feedback", async ({ chatId, messageId, feedback }) => {
+      try {
+        const chat = await Chat.findById(chatId);
+        if (!chat) return;
+        const msg = chat.messages.id(messageId);
+        if (msg) {
+          msg.feedback = feedback;
+          await chat.save();
+          console.log(`⭐ Feedback recorded for ${messageId}: ${feedback}`);
+        }
+      } catch (err) { console.error("Feedback error:", err); }
+    });
+
+    // --- NEW: Neural Autocomplete / Suggestion ---
+    socket.on("chat:suggest", async ({ input }) => {
+      if (!input || input.length < 5) return;
+      try {
+        const { generateCompletion } = await import("../services/llm.js");
+        const suggestion = await generateCompletion(input);
+        if (suggestion) {
+          socket.emit("chat:suggestion", { suggestion });
+        }
+      } catch (err) { /* Silent fail for suggestions */ }
+    });
+
     socket.on("chat:message", async (data) => {
       try {
         const { userId, chatId, message, images, audio, fileUrl } = data;
+        const operatorName = process.env.OPERATOR_NAME || "Operator";
         
+        // 1. Context & RAG initialization (Internet Research Logic)
         let finalMessageText = message || "";
         let contextAddition = "";
+        let internetContext = "";
+        
+        // --- NEW: Internet Research (Automated Trigger for Present Context) ---
+        const timeSensitiveKeywords = ["today", "current", "latest", "now", "weather", "news", "price", "stock", "2024", "2025", "2026", "present", "recent", "war", "conflict", "happening", "status", "situation"];
+        if (timeSensitiveKeywords.some(k => finalMessageText.toLowerCase().includes(k)) || finalMessageText.toLowerCase().includes("what are") || finalMessageText.toLowerCase().includes("list of")) {
+            try {
+                const { searchInternet } = await import("../services/search.js");
+                const results = await searchInternet(finalMessageText);
+                if (results && results.length > 0) {
+                    socket.emit("chat:reply:chunk", { chunk: "*(Neural Research active: Fetching real-time context...)*\n\n" });
+                    internetContext = results.map(r => `[REAL-TIME SEARCH SOURCE: ${r.url}]\n${r.snippet}`).join("\n\n");
+                }
+            } catch (err) { console.error("Search Error:", err); }
+        }
 
         if (!message && !audio && (!images || images.length === 0) && !fileUrl) {
           socket.emit("chat:error", { message: "Empty message payload" });
@@ -130,15 +172,42 @@ export const chatSocketHandler = (io) => {
         }
 
         // --- NEW: Informational Reference Image Search ---
-        const informationalKeywords = ["what is", "who is", "tell me about", "show me", "bmw", "apple", "logo"];
-        if (informationalKeywords.some(k => finalMessageText.toLowerCase().includes(k)) && !images?.length) {
+        const informationalKeywords = ["what is", "who is", "tell me about", "show me", "images of", "life cycle", "anatomy", "diagram"];
+        const fillerWords = ["ok", "hey", "please", "can you", "find", "search", "a", "an", "the", "about", "show", "me"];
+        const nonVisualQueries = ["date", "time", "clock", "weather", "calculate", "math", "today", "now", "calendar"];
+        
+        const isVisualRequest = informationalKeywords.some(k => finalMessageText.toLowerCase().includes(k)) || finalMessageText.toLowerCase().includes("images of");
+        const isUtilityQuery = nonVisualQueries.some(k => finalMessageText.toLowerCase().includes(k));
+
+        if (isVisualRequest && !isUtilityQuery && !images?.length) {
             try {
                 const { searchReferenceImages } = await import("../services/imageSearch.js");
-                const entities = finalMessageText.split(" ").slice(-3).join(" "); // rough entity extraction
-                const refs = await searchReferenceImages(entities);
+                
+                // 🧠 Advanced Entity Extraction
+                let query = finalMessageText.toLowerCase();
+                // 1. Remove informational trigger phrases
+                informationalKeywords.forEach(k => query = query.replace(k, ""));
+                // 2. Strip filler words
+                fillerWords.forEach(w => {
+                    const regex = new RegExp(`\\b${w}\\b`, "gi");
+                    query = query.replace(regex, "");
+                });
+                
+                let entities = query.trim().replace(/\s+/g, " ");
+                if (!entities || entities.length < 3) return;
+
+                // 🚀 Quality Modifiers for educational queries
+                let searchTerms = entities;
+                if (entities.includes("cycle") || entities.includes("anatomy") || entities.includes("process")) {
+                    searchTerms += " scientific diagram realistic";
+                }
+                
+                const refs = await searchReferenceImages(searchTerms);
                 if (refs && refs.length > 0) {
-                    socket.emit("chat:reply:chunk", { chunk: "*(Finding reference images...)*\n\n" });
-                    // We'll attach these to the final assistant message or send as a special chunk
+                    socket.emit("chat:reply:chunk", { chunk: `*(Finding high-fidelity references for: ${entities}...)*\n\n` });
+                    refs.forEach(url => images.push(url));
+                    socket.emit("chat:reply:images", { images: refs });
+                    contextAddition += `\n[REFERENCE IMAGES ATTACHED]: The system is displaying ${refs.length} real-world images of ${entities}. Do NOT use bracketed text - discuss the visual details revealed in these specific images.`;
                 }
             } catch (err) { console.error("Search err:", err); }
         }
@@ -174,15 +243,29 @@ export const chatSocketHandler = (io) => {
           socket.emit("chat:created", { chatId: chat._id, title: chat.title });
         }
 
-        // 3. RAG
-        let ragContext = "";
+        // 3. Vector RAG
+        let vectorContext = "";
         try {
            if (finalMessageText.trim()) {
-             ragContext = await getRelevantDocs(finalMessageText);
+             vectorContext = await getRelevantDocs(finalMessageText);
            }
         } catch (e) {
            console.warn("RAG failed:", e.message);
         }
+
+        // 🧠 Consolidate All Sensory Input (Internet, Scraped, Vector, File)
+        const enrichedContext = `
+=== [REAL-TIME INTERNET RESEARCH] ===
+${internetContext || "No real-time search results fetched."}
+
+=== [SCRAPED WEB CONTENT] ===
+${urlScrapedContext || "No websites scraped."}
+
+=== [LOCAL NEURAL MEMORY] ===
+${vectorContext || "No relevant local documents found."}
+`.trim();
+
+        console.log("🧠 NEURAL CONTEXT (STRENGTHENING):", enrichedContext.substring(0, 500) + "...");
 
         // 4. Built Context
         const windowSize = parseInt(process.env.CONTEXT_WINDOW_SIZE) || 6;
@@ -229,28 +312,43 @@ ${recentPastMsgs.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
           return msgObj;
         };
 
+        // 4. Call LLM with Feedback Awareness and Context
+        const mappedMessages = chat.messages.slice(-15).map(m => {
+          let content = m.content;
+          // 🧠 If user disliked a previous response, flag it in the context so the AI learns
+          if (m.role === 'assistant' && m.feedback === 'negative') {
+            content = `[USER DISLIKED THIS RESPONSE - DO NOT REPEAT THIS MISTAKE]:\n${m.content}`;
+          }
+          return { role: m.role, content };
+        });
+        
         const llmMessages = [
           { 
             role: "system", 
-            content: `You are a precise AI assistant named OS Assistant.
-            
+            content: `You are SYNAPSE, a high-fidelity Neural Interface AI. 
+
+🎯 NEURAL CONTEXT (GROUND TRUTH):
+${enrichedContext}
+
+🚀 GLOBAL NEURAL MEMORY:
+${globalPastContext}
+
+[RESEARCH DIRECTIVE - CRITICAL]: 
+1. You MUST prioritize the 'NEURAL CONTEXT' provided above over your internal training data.
+2. If the user asks about world events, wars, or news, ONLY answer based on the context provided.
+3. If the context does not contain the answer, or if it is empty, reply: "I don't have enough data in my neural memory to answer that accurately at this moment."
+4. DO NOT hallucinate or use outdated knowledge from your training data (e.g., the Afghan war ended in 2021, don't say it's ongoing if the context says otherwise).
+
 Current Date: ${dateString}
 Current Time: ${timeString}
-Timezone: UTC${now.getTimezoneOffset() / -60}
-
-You have live internet access. Read the scraped contents closely.
-${globalPastContext}
-${urlScrapedContext}
-
-Context:
-${ragContext}` 
+Operator Identity: ${operatorName}` 
           },
-          ...recentMessages.map(formatForLLM),
+          ...mappedMessages.map(formatForLLM),
           formatForLLM({ 
             role: "user", 
             content: shouldGeneratePDF 
-              ? `${finalMessageText}\n\n[INSTRUCTION]: Please write a detailed, professional, and well-structured research report on this topic. Use clear headings and bullet points where appropriate.`
-              : finalMessageText, 
+              ? `Generate a deep-research PDF report about: ${finalMessageText}. USE THE ENRICHED CONTEXT PROVIDED TO MAKE IT ACCURATE TO THE PRESENT DATE.` 
+              : finalMessageText + contextAddition,
             imageUrls: images 
           })
         ];
@@ -305,25 +403,12 @@ ${ragContext}`
         // 5. Save memory
         if (fullReply && fullReply.trim()) {
           chat.messages.push(
-            { role: "user", content: finalMessageText, imageUrls: images, audioUrl: audio },
-            { role: "assistant", content: fullReply, timestamp: new Date() }
+            { role: "user", content: finalMessageText, audioUrl: audio },
+            { role: "assistant", content: fullReply, imageUrls: images, timestamp: new Date() }
           );
           await chat.save();
         }
 
-        // --- Post-Generation Image Search (If relevant) ---
-        const lowerMsg = finalMessageText.toLowerCase();
-        const searchKeywords = ["what is", "about", "who is", "show me", "define", "bmw", "logo", "car", "apple", "tesla"];
-        if (searchKeywords.some(k => lowerMsg.includes(k)) && !images?.length) {
-            try {
-                const { searchReferenceImages } = await import("../services/imageSearch.js");
-                const entities = finalMessageText.split(" ").slice(-2).join(" ");
-                const searchResults = await searchReferenceImages(entities);
-                if (searchResults && searchResults.length > 0) {
-                    socket.emit("chat:reply:images", { images: searchResults.slice(0, 4) });
-                }
-            } catch (e) { console.error("Post-image search failed:", e); }
-        }
 
         // --- Post-Generation PDF Creation (If flagged) ---
         if (shouldGeneratePDF && fullReply) {

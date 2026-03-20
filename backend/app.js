@@ -39,6 +39,12 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
   const url = `${baseUrl}/uploads/${req.file.filename}`;
   res.json({ url });
 });
+app.get("/api/config", (req, res) => {
+  res.json({
+    operatorName: process.env.OPERATOR_NAME || "Operator",
+    baseUrl: process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+  });
+});
 app.use("/uploads", express.static(uploadDir));
 
 // 🔌 MongoDB

@@ -1,6 +1,17 @@
-LangChain is a framework for developing applications powered by large language models (LLMs).
-It provides tools for document loading, splitting, vector stores, and retrieval.
-Ollama is a platform for running large language models locally.
-FAISS (Facebook AI Similarity Search) is a library for efficient similarity search and clustering of dense vectors.
-RAG (Retrieval-Augmented Generation) is a technique that gives LLMs access to external information.
-This project uses Ollama with the nomic-embed-text model for embeddings and FAISS for vector storage.
+Ukraine-Russia War (2022–present):
+A full-scale invasion of Ukraine by Russia began in February 2022. This conflict has resulted in significant territorial changes, large-scale displacement, and ongoing military operations across eastern and southern Ukraine.
+
+Israel-Gaza Conflict (2023–present):
+Following the attacks on October 7, 2023, a major conflict erupted between Israel and Hamas in the Gaza Strip. This has led to intense military operations, a severe humanitarian crisis, and regional tensions.
+
+Sudan Conflict (2023–present):
+A power struggle between the Sudanese Armed Forces (SAF) and the paramilitary Rapid Support Forces (RSF) broke out in April 2023. This internal conflict has caused widespread displacement and a humanitarian emergency in Sudan.
+
+Yemen Civil War (2015–present):
+A multi-sided conflict that escalated in 2015 between the Houthi movement and the Saudi-led coalition supporting the Yemeni government. It remains one of the world's most severe humanitarian crises.
+
+Syrian Civil War (2011–present):
+An ongoing multi-sided civil war in Syria fought between the Syrian Arab Republic and various domestic and foreign forces that oppose both the Syrian government and each other.
+
+Myanmar Civil War (2021–present):
+Following the 2021 military coup, widespread armed resistance has emerged against the military junta, involving various ethnic armed organizations and the People's Defense Forces (PDF).

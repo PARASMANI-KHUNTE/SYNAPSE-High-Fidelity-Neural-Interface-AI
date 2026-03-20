@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react';
 import MessageBubble from './MessageBubble';
 import InputBar from './InputBar';
-import { Bot, Cpu } from 'lucide-react';
+import { Bot, Cpu, Zap } from 'lucide-react';
 import Particles from './Particles';
 
-export default function ChatWindow({ messages, isTyping, isSpeaking, onSendMessage, onStopMessage, onStopAudio }) {
+export default function ChatWindow({ 
+  messages, isTyping, isSpeaking, operatorName, suggestion, 
+  onSendMessage, onStopMessage, onStopAudio, onFeedback, onSuggest, clearSuggestion 
+}) {
   const bottomRef = useRef(null);
 
   // Auto-scroll to bottom
@@ -13,22 +16,26 @@ export default function ChatWindow({ messages, isTyping, isSpeaking, onSendMessa
   }, [messages, isTyping]);
 
   return (
-    <div className="flex flex-col h-full relative w-full max-w-5xl mx-auto pt-6 pb-0 overflow-hidden">
+    <div className="flex flex-col h-full relative w-full pt-6 pb-0 overflow-hidden">
       
-      {/* 🌌 DYNAMIC NEURAL PARTICLES */}
+      {/* 🌌 DYNAMIC NEURAL PARTICLES - FULL WIDTH */}
       <Particles isSpeaking={isSpeaking} />
 
-      {/* Ambient Background Glow */}
+      {/* Ambient Background Glow - FULL WIDTH */}
       <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 ${isSpeaking ? 'opacity-100' : 'opacity-40'}`}>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-[120px] animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-full h-80 bg-gradient-to-t from-cyan-500/10 to-transparent"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/10 rounded-full blur-[150px] animate-pulse"></div>
+        <div className="absolute min-w-full bottom-0 left-0 w-full h-96 bg-gradient-to-t from-cyan-500/10 to-transparent"></div>
       </div>
       
-      {/* Header Overlay (Sci-fi feeling) */}
-      <div className="flex items-center gap-3 px-8 py-2 z-20 border-b border-white/5 bg-slate-900/40 backdrop-blur-md">
-        <Cpu size={18} className="text-cyan-400 animate-pulse" />
-        <span className="text-[10px] font-bold tracking-[0.2em] text-slate-400 uppercase">Neural Stream Active | OS Assistant v2.0</span>
-      </div>
+      {/* Immersion Layer - Full Width Content Wrapper */}
+      <div className="flex flex-col h-full w-full relative z-10 overflow-hidden">
+
+        {/* Header Overlay - SYNAPSE PRO */}
+        <div className="flex items-center gap-3 px-8 py-2 z-20 border-b border-white/5 bg-slate-900/40 backdrop-blur-md rounded-t-2xl">
+          <Zap size={16} className="text-cyan-400 animate-pulse" fill="currentColor" />
+          <span className="text-[10px] font-bold tracking-[0.2em] text-slate-400 uppercase">SYNAPSE ACTIVE | NEURAL INTERFACE v2.0</span>
+        </div>
+
 
       {/* Messages List */}
       <div className="flex-1 overflow-y-auto px-6 pb-40 pt-10 scroll-smooth flex flex-col gap-8 z-10 custom-scrollbar">
@@ -45,10 +52,15 @@ export default function ChatWindow({ messages, isTyping, isSpeaking, onSendMessa
           messages.map((msg, idx) => (
             <MessageBubble 
               key={msg.id || idx} 
+              id={msg.id || msg._id}
               role={msg.role} 
               content={msg.content} 
               isError={msg.isError} 
               imageUrls={msg.imageUrls} 
+              isSpeaking={isSpeaking && idx === messages.length - 1} 
+              operatorName={operatorName}
+              initialFeedback={msg.feedback}
+              onFeedback={onFeedback}
             />
           ))
         )}
@@ -58,15 +70,18 @@ export default function ChatWindow({ messages, isTyping, isSpeaking, onSendMessa
       {/* Input Area Overlay */}
       <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#020617] via-[#020617]/90 to-transparent p-6 pb-10 z-20">
         <InputBar 
-          onSend={onSendMessage} 
-          onStop={onStopMessage} 
-          onStopAudio={onStopAudio}
+          onSendMessage={onSendMessage} 
+          onStopMessage={onStopMessage}
           isTyping={isTyping}
           isSpeaking={isSpeaking}
+          suggestion={suggestion}
+          onSuggest={onSuggest}
+          clearSuggestion={clearSuggestion}
           disabled={isTyping && messages.length > 0 && messages[messages.length-1].role === 'user'} 
         />
         <div className="text-center text-[10px] text-slate-500 mt-4 font-bold tracking-widest uppercase opacity-60">
-          Core Processing Unit | Local Inference Restricted
+           Neural Core Processing | SYNAPSE v2.0
+          </div>
         </div>
       </div>
     </div>

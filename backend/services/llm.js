@@ -124,3 +124,31 @@ const callOllamaStream = async (messages, onChunk, hasImages, abortSignal) => {
   }
   return fullContent;
 };
+
+// ═══════════════════════════════════════════
+// 🧠 NEURAL AUTOCOMPLETE & SUGGESTION
+// ═══════════════════════════════════════════
+export const generateCompletion = async (text) => {
+  const model = process.env.OLLAMA_MODEL || "llama3";
+  const prompt = `Continue or correct the following text (max 5 words). ONLY return the completion. No chat, no intro.
+Input: "${text}"
+Completion:`;
+  
+  try {
+    const response = await fetch(`${getOllamaBaseUrl()}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        model, 
+        prompt, 
+        stream: false, 
+        options: { stop: ["\n", ".", "Input:"], num_predict: 12, temperature: 0.3 } 
+      })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.response ? data.response.trim().replace(/^"/, '').replace(/"$/, '') : null;
+  } catch (err) { 
+    return null; 
+  }
+};
