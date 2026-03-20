@@ -1,0 +1,6 @@
+LangChain is a framework for developing applications powered by large language models (LLMs).
+It provides tools for document loading, splitting, vector stores, and retrieval.
+Ollama is a platform for running large language models locally.
+FAISS (Facebook AI Similarity Search) is a library for efficient similarity search and clustering of dense vectors.
+RAG (Retrieval-Augmented Generation) is a technique that gives LLMs access to external information.
+This project uses Ollama with the nomic-embed-text model for embeddings and FAISS for vector storage.
