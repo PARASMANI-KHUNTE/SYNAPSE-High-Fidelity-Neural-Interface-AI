@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const fetchWithTimeout = async (url, options, timeout = OLLAMA_TIMEOUT) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -32,15 +32,15 @@ const fetchWithTimeout = async (url, options, timeout = OLLAMA_TIMEOUT) => {
 
 export const transcribeAudio = async (filePath) => {
   return new Promise((resolve) => {
-    console.log(`🎙️  Transcribing audio locally: ${path.basename(filePath)}...`);
-    
+    console.log(`Transcribing audio locally: ${path.basename(filePath)}...`);
+
     if (!fs.existsSync(filePath)) {
       console.error("Audio file not found:", filePath);
       return resolve("[Transcription Failed: File not found]");
     }
 
     const scriptPath = path.join(process.cwd(), "scripts", "transcribe.py");
-    
+
     if (!fs.existsSync(scriptPath)) {
       console.error("Transcription script not found:", scriptPath);
       return resolve("[Transcription Failed: Script not found]");
@@ -57,14 +57,13 @@ export const transcribeAudio = async (filePath) => {
         }
         return resolve(`[Transcription Failed: ${error.message}]`);
       }
-      
+
       const transcription = stdout.trim();
-      
       if (!transcription) {
         return resolve("[Transcription Failed: Empty result]");
       }
-      
-      console.log("✅ Transcription complete:", transcription.substring(0, 100));
+
+      console.log("Transcription complete:", transcription.substring(0, 100));
       resolve(transcription);
     });
 
@@ -77,35 +76,39 @@ export const transcribeAudio = async (filePath) => {
 
 export async function generateResponseStream(messages, onChunk, abortSignal, modelOverride = null) {
   const lastMessage = [...messages].reverse().find(m => m.role === "user");
-  const hasImages = lastMessage && lastMessage.images && lastMessage.images.length > 0;
-  
+  const hasImages = Boolean(lastMessage && lastMessage.images && lastMessage.images.length > 0);
+
   const primaryModel = modelOverride || getOllamaModel(hasImages);
   const fallbackModel = process.env.OLLAMA_MODEL || "llama3.2:1b";
-  
-  // Try with primary model first, fall back if it's not available (404 = not pulled yet)
-  const modelsToTry = primaryModel !== fallbackModel 
-    ? [primaryModel, fallbackModel] 
-    : [primaryModel];
+  const modelsToTry = hasImages
+    ? [primaryModel]
+    : primaryModel !== fallbackModel
+      ? [primaryModel, fallbackModel]
+      : [primaryModel];
 
   for (const model of modelsToTry) {
-    console.log(`\n🦙 Calling Ollama Stream [${model}]`);
+    console.log(`\nCalling Ollama Stream [${model}]`);
     let lastError;
-    
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         return await callOllamaStreamWithModel(messages, onChunk, model, abortSignal);
       } catch (err) {
         lastError = err;
-        
-        if (err.name === "AbortError" || err.type === "aborted") throw err;
-        
-        // Model not downloaded — skip retries, try fallback immediately
+
+        if (err.name === "AbortError" || err.type === "aborted") {
+          throw err;
+        }
+
         if (err.message.includes("404") || err.message.includes("not found")) {
-          console.warn(`⚠️ Model [${model}] not available. Falling back...`);
+          if (hasImages) {
+            throw new Error(`Vision model [${model}] is not available in Ollama. Pull it first or set OLLAMA_VISION_MODEL correctly.`);
+          }
+          console.warn(`Model [${model}] not available. Falling back...`);
           break;
         }
-        
-        console.warn(`⚠️ Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+
+        console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
         if (attempt < MAX_RETRIES) {
           const delay = RETRY_DELAY * attempt;
           console.log(`Retrying in ${delay}ms...`);
@@ -113,9 +116,8 @@ export async function generateResponseStream(messages, onChunk, abortSignal, mod
         }
       }
     }
-    
+
     if (model === modelsToTry[modelsToTry.length - 1]) {
-      console.error(`❌ All models failed`);
       throw lastError || new Error("Ollama connection failed");
     }
   }
@@ -123,15 +125,15 @@ export async function generateResponseStream(messages, onChunk, abortSignal, mod
 
 export const generateResponse = async (messages, modelOverride = null) => {
   const lastMessage = [...messages].reverse().find(m => m.role === "user");
-  const hasImages = !!(lastMessage && lastMessage.images && lastMessage.images.length > 0);
-  
+  const hasImages = Boolean(lastMessage && lastMessage.images && lastMessage.images.length > 0);
+
   const model = modelOverride || getOllamaModel(hasImages);
   const baseUrl = getOllamaBaseUrl();
-  
-  console.log(`\n🦙 Calling Ollama [${model}]`);
-  
+
+  console.log(`\nCalling Ollama [${model}]`);
+
   let lastError;
-  
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await fetchWithTimeout(
@@ -141,33 +143,31 @@ export const generateResponse = async (messages, modelOverride = null) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model,
-            messages: messages.map(m => ({ role: m.role, content: m.content })),
+            messages: messages.map(m => ({ role: m.role, content: m.content, ...(m.images ? { images: m.images } : {}) })),
             stream: false,
             options: { num_ctx: 16384, temperature: 0.7 }
           })
         },
         OLLAMA_TIMEOUT
       );
-      
+
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
         throw new Error(`Ollama HTTP ${response.status}: ${errorText}`);
       }
-      
+
       const data = await response.json();
-      
       if (!data.message?.content) {
         throw new Error("Invalid response from Ollama");
       }
-      
+
       return data.message.content;
-      
     } catch (err) {
       lastError = err;
-      console.warn(`⚠️ Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
-      
+      console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+
       if (err.name === "AbortError") throw err;
-      
+
       if (attempt < MAX_RETRIES) {
         const delay = RETRY_DELAY * attempt;
         console.log(`Retrying in ${delay}ms...`);
@@ -175,16 +175,16 @@ export const generateResponse = async (messages, modelOverride = null) => {
       }
     }
   }
-  
+
   throw lastError || new Error("Ollama connection failed after all retries");
 };
 
 const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) => {
   const baseUrl = getOllamaBaseUrl();
   const hasImages = messages.some(m => m.images && m.images.length > 0);
-  
-  console.log(`🦙 Streaming Ollama [${model}]`);
-  
+
+  console.log(`Streaming Ollama [${model}]`);
+
   const safeMessages = messages.map(m => {
     if (!hasImages || !m.images) {
       return { role: m.role, content: m.content?.substring(0, 8000) || "" };
@@ -195,9 +195,9 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
       images: m.images.slice(0, 5)
     };
   });
-  
+
   let fullContent = "";
-  
+
   const response = await fetchWithTimeout(
     `${baseUrl}/api/chat`,
     {
@@ -212,50 +212,46 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
     },
     OLLAMA_TIMEOUT
   );
-  
+
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     throw new Error(`Ollama HTTP ${response.status}: ${errorText}`);
   }
-  
+
   if (!response.body) {
     throw new Error("No response body from Ollama");
   }
-  
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  
+
   try {
     while (true) {
       if (abortSignal?.aborted) {
         console.log("[Abort] Stream manually stopped");
         return fullContent;
       }
-      
+
       const { done, value } = await reader.read();
-      
       if (done) break;
-      
+
       const chunk = decoder.decode(value, { stream: true });
       const lines = chunk.split("\n").filter(Boolean);
-      
+
       for (const line of lines) {
         if (abortSignal?.aborted) {
           return fullContent;
         }
-        
+
         try {
           const data = JSON.parse(line);
-          
           if (data.error) {
             throw new Error(`Ollama error: ${data.error}`);
           }
-          
           if (data.message?.content) {
             onChunk(data.message.content);
             fullContent += data.message.content;
           }
-          
           if (data.done) {
             return fullContent;
           }
@@ -270,11 +266,10 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
   } finally {
     reader.releaseLock();
   }
-  
+
   return fullContent;
 };
 
-// Keep legacy alias for any other callers
 const callOllamaStream = (messages, onChunk, hasImages, abortSignal) => {
   const model = getOllamaModel(hasImages);
   return callOllamaStreamWithModel(messages, onChunk, model, abortSignal);
@@ -282,18 +277,16 @@ const callOllamaStream = (messages, onChunk, hasImages, abortSignal) => {
 
 export const generateCompletion = async (text) => {
   if (!text || text.length < 3) return null;
-  
+
   const model = process.env.OLLAMA_MODEL || "llama3";
   const baseUrl = getOllamaBaseUrl();
-  
-  const prompt = `Continue or correct the following text (max 5 words). ONLY return the completion. No chat, no intro.
-Input: "${text.substring(0, 200)}"
-Completion:`;
-  
+
+  const prompt = `Continue or correct the following text (max 5 words). ONLY return the completion. No chat, no intro.\nInput: "${text.substring(0, 200)}"\nCompletion:`;
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+
     const response = await fetch(`${baseUrl}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -305,19 +298,16 @@ Completion:`;
         options: { stop: ["\n", ".", "Input:", '"'], num_predict: 15, temperature: 0.3 }
       })
     });
-    
+
     clearTimeout(timeoutId);
-    
     if (!response.ok) {
       return null;
     }
-    
+
     const data = await response.json();
-    
     if (!data.response) return null;
-    
+
     return data.response.trim().replace(/^["']|["']$/g, "").substring(0, 100);
-    
   } catch (err) {
     if (err.name === "AbortError") {
       console.warn("Completion request timed out");
@@ -330,24 +320,23 @@ Completion:`;
 
 export const checkOllamaHealth = async () => {
   const baseUrl = getOllamaBaseUrl();
-  
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
+
     const response = await fetch(`${baseUrl}/api/tags`, {
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (response.ok) {
       const data = await response.json();
       return { healthy: true, models: data.models?.map(m => m.name) || [] };
     }
-    
+
     return { healthy: false, error: `HTTP ${response.status}` };
-    
   } catch (err) {
     return { healthy: false, error: err.message };
   }

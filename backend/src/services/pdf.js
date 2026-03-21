@@ -1,5 +1,8 @@
 import fs from "fs";
-import pdf from "pdf-parse";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pdf = require("pdf-parse");
 
 export const parsePDF = async (filePath) => {
   try {

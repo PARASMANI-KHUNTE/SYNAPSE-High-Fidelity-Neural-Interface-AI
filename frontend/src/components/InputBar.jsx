@@ -37,7 +37,8 @@ export default function InputBar({
   clearSuggestion,
   modelPreference,
   onModelPreferenceChange,
-  availableModels
+  availableModels,
+  onOpenSandbox
 }) {
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
@@ -45,6 +46,7 @@ export default function InputBar({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
   
   const [autoSpeak, setAutoSpeak] = useState(() => localStorage.getItem("auto_speak") === "true");
   
@@ -55,6 +57,7 @@ export default function InputBar({
   const recordingTimerRef = useRef(null);
   const suggestTimeoutRef = useRef(null);
   const streamRef = useRef(null);
+  const toolsMenuRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem("auto_speak", String(autoSpeak));
@@ -90,6 +93,17 @@ export default function InputBar({
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!toolsMenuRef.current?.contains(event.target)) {
+        setIsToolsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const stopRecording = useCallback(() => {
@@ -398,18 +412,38 @@ export default function InputBar({
           <ImagePlus size={22} />
         </button>
 
-        <div className="relative group mr-1">
+        <div ref={toolsMenuRef} className="relative mr-1">
           <button 
             type="button"
+            onClick={() => setIsToolsOpen((prev) => !prev)}
             className="p-2 text-slate-400 hover:text-yellow-400 hover:bg-slate-800 rounded-xl transition-all shrink-0"
             title="AI Tools"
           >
             <Zap size={22} />
           </button>
           
-          <div className="absolute bottom-full mb-2 left-0 hidden group-hover:flex flex-col bg-slate-800 border border-slate-700 rounded-xl shadow-2xl min-w-[200px] overflow-hidden z-50">
+          <div className={clsx(
+            "absolute bottom-full mb-2 left-0 flex-col bg-slate-800 border border-slate-700 rounded-xl shadow-2xl min-w-[200px] overflow-hidden z-50",
+            isToolsOpen ? "flex" : "hidden"
+          )}>
             <button 
-              onClick={() => setInput("Generate an image of: ")}
+              onClick={() => {
+                setIsToolsOpen(false);
+                onOpenSandbox?.();
+              }}
+              className="flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700 text-slate-200 transition-colors border-b border-slate-700/50"
+            >
+              <Square size={16} className="text-cyan-400" />
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold">Open Sandbox</span>
+                <span className="text-xs text-slate-400">Run JS or Python</span>
+              </div>
+            </button>
+            <button 
+              onClick={() => {
+                setInput("Generate an image of: ");
+                setIsToolsOpen(false);
+              }}
               className="flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700 text-slate-200 transition-colors border-b border-slate-700/50"
             >
               <ImagePlus size={16} className="text-yellow-400" />
@@ -419,7 +453,10 @@ export default function InputBar({
               </div>
             </button>
             <button 
-              onClick={() => setInput("Create a PDF report about: ")}
+              onClick={() => {
+                setInput("Create a PDF report about: ");
+                setIsToolsOpen(false);
+              }}
               className="flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700 text-slate-200 transition-colors"
             >
               <FileText size={16} className="text-blue-400" />

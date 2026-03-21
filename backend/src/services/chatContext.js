@@ -24,7 +24,8 @@ const MEMORY_QUERY_PATTERNS = [
 
 const normalizeMessage = (message) => ({
   role: message.role,
-  content: typeof message.content === "string" ? message.content.trim() : ""
+  content: typeof message.content === "string" ? message.content.trim() : "",
+  images: Array.isArray(message.images) ? message.images : undefined
 });
 
 const tokenize = (text) =>
@@ -135,23 +136,42 @@ const selectConversationHistory = (messages, query) => {
 export const buildChatMessages = ({
   chatMessages = [],
   userMessage = "",
+  currentUserMessage = null,
   operatorName = "Operator",
   ragContext = "",
   searchContext = "",
+  attachmentContext = "",
   queryType = "KNOWLEDGE"
 }) => {
   const memoryFacts = extractMemoryFacts(chatMessages);
   const conversationHistory = selectConversationHistory(chatMessages, userMessage);
+  const hasVisualInput = Boolean(currentUserMessage?.images?.length);
   
-  const systemParts = [
-    `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${operatorName}.`,
-    "Core Directives:",
-    "- Maintain a natural, helpful, and professional tone.",
-    "- Be conversational for greetings and casual chat.",
-    "- Use conversation history for continuity and memory facts for stable user details."
-  ];
+  const systemParts = hasVisualInput
+    ? [
+        `You are SYNAPSE, a vision-capable AI assistant helping your operator, ${operatorName}.`,
+        "Vision Directives:",
+        "- The current user turn includes attached image data.",
+        "- Analyze the attached image directly.",
+        "- Do not say you cannot see images.",
+        "- Describe visible objects, text, layout, style, colors, and notable details grounded in the image.",
+        "- If something is unclear, state uncertainty briefly instead of inventing details."
+      ]
+    : [
+        `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${operatorName}.`,
+        "Core Directives:",
+        "- Maintain a natural, helpful, and professional tone.",
+        "- Be conversational for greetings and casual chat.",
+        "- Use conversation history for continuity and memory facts for stable user details."
+      ];
 
-  if (queryType === "KNOWLEDGE" || ragContext || searchContext) {
+  if (hasVisualInput) {
+    if (memoryFacts.length > 0) {
+      systemParts.push("", "Known Facts about Operator:", ...memoryFacts.map((fact) => `- ${fact}`));
+    }
+  }
+
+  if (!hasVisualInput && (queryType === "KNOWLEDGE" || ragContext || searchContext)) {
     systemParts.push(
       "Knowledge Integration Rules:",
       "- Use retrieved knowledge and search results only when they are relevant.",
@@ -167,20 +187,35 @@ export const buildChatMessages = ({
     );
   }
 
-  if (memoryFacts.length > 0) {
+  if (!hasVisualInput && memoryFacts.length > 0) {
     systemParts.push("", "Known Facts about Operator:", ...memoryFacts.map((fact) => `- ${fact}`));
   }
 
-  if (ragContext) {
+  if (!hasVisualInput && ragContext) {
     systemParts.push("", "Retrieved Knowledge Context:", truncate(ragContext, 6000));
   }
 
-  if (searchContext) {
+  if (!hasVisualInput && searchContext) {
     systemParts.push("", "Latest Information (Web Search):", truncate(searchContext, 4000));
   }
 
+  if (!hasVisualInput && attachmentContext) {
+    systemParts.push("", "Attachment Context:", truncate(attachmentContext, 5000));
+  }
+
+  const currentTurn = currentUserMessage
+    ? {
+        role: "user",
+        content: hasVisualInput
+          ? `Attached image analysis request:\n${currentUserMessage.content || userMessage || "Describe the attached image."}`
+          : (currentUserMessage.content || ""),
+        ...(currentUserMessage.images ? { images: currentUserMessage.images } : {})
+      }
+    : null;
+
   return [
     { role: "system", content: systemParts.join("\n") },
-    ...conversationHistory
+    ...(hasVisualInput ? [] : conversationHistory),
+    ...(currentTurn ? [currentTurn] : [])
   ];
 };

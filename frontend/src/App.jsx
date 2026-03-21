@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, Component } from "react";
 import { io } from "socket.io-client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
+import SandboxPanel from "./components/SandboxPanel";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const RECONNECT_DELAY = 3000;
@@ -51,6 +52,7 @@ function App() {
   const [operatorName, setOperatorName] = useState("Operator");
   const [availableModels, setAvailableModels] = useState({});
   const [modelPreference, setModelPreference] = useState(() => localStorage.getItem("chat_model_preference") || "auto");
+  const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   
   const [chatSessions, setChatSessions] = useState([]);
   const [activeChatId, setActiveChatId] = useState(() => localStorage.getItem("active_chat_id") || null);
@@ -297,6 +299,26 @@ function App() {
         }
       });
 
+      socketInstance.on("chat:reply:file", (data) => {
+        if (!mountedRef.current || !data?.url) return;
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          for (let i = newMessages.length - 1; i >= 0; i -= 1) {
+            if (newMessages[i].role === "assistant") {
+              const linkLine = `\n\nDownload ${data.type || "file"}: ${data.url}`;
+              if (!newMessages[i].content?.includes(data.url)) {
+                newMessages[i] = {
+                  ...newMessages[i],
+                  content: `${newMessages[i].content || ""}${linkLine}`
+                };
+              }
+              break;
+            }
+          }
+          return newMessages;
+        });
+      });
+
       socketInstance.on("chat:reply:end", () => {
         if (!mountedRef.current) return;
         isGenerationActiveRef.current = false;
@@ -483,6 +505,7 @@ function App() {
             modelPreference={modelPreference}
             onModelPreferenceChange={setModelPreference}
             availableModels={availableModels}
+            onOpenSandbox={() => setIsSandboxOpen(true)}
             onSendMessage={handleSendMessage}
             onStopMessage={handleStopMessage}
             onFeedback={handleFeedback}
@@ -490,6 +513,7 @@ function App() {
             clearSuggestion={handleClearSuggestion}
           />
         </div>
+        <SandboxPanel isOpen={isSandboxOpen} onClose={() => setIsSandboxOpen(false)} />
       </div>
     </ErrorBoundary>
   );

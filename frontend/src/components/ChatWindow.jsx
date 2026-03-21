@@ -7,7 +7,7 @@ import Particles from "./Particles";
 export default function ChatWindow({ 
   messages, isTyping, isSpeaking, operatorName, suggestion, 
   onSendMessage, onStopMessage, onFeedback, onSuggest, clearSuggestion,
-  modelPreference, onModelPreferenceChange, availableModels
+  modelPreference, onModelPreferenceChange, availableModels, onOpenSandbox
 }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -184,6 +184,7 @@ export default function ChatWindow({
             modelPreference={modelPreference}
             onModelPreferenceChange={onModelPreferenceChange}
             availableModels={availableModels}
+            onOpenSandbox={onOpenSandbox}
             disabled={isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user"}
           />
           <div className="text-center text-[10px] text-slate-500 mt-4 font-bold tracking-widest uppercase opacity-60">

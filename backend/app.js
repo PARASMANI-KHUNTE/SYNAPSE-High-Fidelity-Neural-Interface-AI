@@ -16,6 +16,7 @@ import { getConfiguredModels } from "./src/services/chatRouter.js";
 // Routes
 import chatRoutes from "./src/routes/chat.js";
 import uploadRoutes from "./src/routes/upload.js";
+import sandboxRoutes from "./src/routes/sandbox.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +53,7 @@ app.get("/api/config", (req, res) => {
 // Routes
 app.use("/api/chat", chatRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/sandbox", sandboxRoutes);
 
 // Error Handler
 app.use(errorHandler);
