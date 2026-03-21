@@ -253,6 +253,13 @@ export const chatSocketHandler = (io) => {
            console.warn("RAG failed:", e.message);
         }
 
+        // 🧪 DEBUG: Log full pipeline state
+        console.log("\n" + "=" .repeat(60));
+        console.log(`💬 [QUERY] ${finalMessageText.substring(0, 150)}`);
+        console.log(`🛰️  [INTERNET CTX] ${internetContext ? `${internetContext.length} chars` : 'NONE'}`);
+        console.log(`🧠 [VECTOR CTX] ${vectorContext ? `${vectorContext.length} chars` : 'NONE - RAG RETURNED EMPTY'}`);
+        console.log("=" .repeat(60) + "\n");
+
         // 🧠 Consolidate All Sensory Input (Internet, Scraped, Vector, File)
         const enrichedContext = `
 === [REAL-TIME INTERNET RESEARCH] ===
@@ -325,7 +332,7 @@ ${recentPastMsgs.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
         const llmMessages = [
           { 
             role: "system", 
-            content: `You are SYNAPSE, a high-fidelity Neural Interface AI. 
+            content: `You are SYNAPSE, a high-fidelity Neural Interface AI.
 
 🎯 NEURAL CONTEXT (GROUND TRUTH):
 ${enrichedContext}
@@ -333,11 +340,12 @@ ${enrichedContext}
 🚀 GLOBAL NEURAL MEMORY:
 ${globalPastContext}
 
-[RESEARCH DIRECTIVE - CRITICAL]: 
-1. You MUST prioritize the 'NEURAL CONTEXT' provided above over your internal training data.
-2. If the user asks about world events, wars, or news, ONLY answer based on the context provided.
-3. If the context does not contain the answer, or if it is empty, reply: "I don't have enough data in my neural memory to answer that accurately at this moment."
-4. DO NOT hallucinate or use outdated knowledge from your training data (e.g., the Afghan war ended in 2021, don't say it's ongoing if the context says otherwise).
+[STRICT RULES - DO NOT VIOLATE]:
+1. The LOCAL NEURAL MEMORY section is your PRIMARY source of truth.
+2. If LOCAL NEURAL MEMORY says "No relevant local documents found." — the query is outside your knowledge base. You MUST reply: "I don't have enough data in my neural memory to answer that accurately at this moment."
+3. NEVER fill gaps using your internal training knowledge — this causes hallucination.
+4. You MAY use REAL-TIME INTERNET RESEARCH if it is populated.
+5. DO NOT guess, infer, or fabricate any data not present in the context.
 
 Current Date: ${dateString}
 Current Time: ${timeString}
