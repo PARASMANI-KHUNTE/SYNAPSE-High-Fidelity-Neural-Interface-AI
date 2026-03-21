@@ -1,139 +1,99 @@
 # 🧠 SYNAPSE: High-Fidelity Neural Interface AI
 
-SYNAPSE is a cutting-edge, multi-modal AI assistant designed for seamless interaction and deep research. It integrates real-time internet search, vector memory, and multimedia processing into a premium, futuristic interface.
+**SYNAPSE** is a premium, high-performance AI assistant ecosystem designed for deep research, multi-modal interaction, and real-time computation. It bridges the gap between local hardware performance and advanced agentic intelligence through a modular, high-fidelity neural architecture.
 
 ---
 
-## 🚀 Key Features
+## 🚀 Visionary Features
 
-### 📡 Advanced Intelligence & RAG
-- **Neural Memory (RAG)**: Integrates Local Vector Search (FAISS) for precise retrieval from personal documents.
-- **Real-time Internet Research**: Automated trigger for time-sensitive queries, fetching the latest news and data.
-- **Cross-Chat Context**: Remembers prior interactions across different sessions for a unified user experience.
+### 📡 Intelligence & Smart Routing
+- **Neural Preference Routing**: Optimized triple-model setup (`Qwen2.5 7B` for reasoning, `DeepSeek-Coder` for software tasks, and `Llama 3.2 3B` for high-speed casual interaction).
+- **Neural Memory (RAG)**: Advanced Vector Search (FAISS) with **Out-of-Domain Rejection** and context overriding.
+- **Deep Search Protocol**: Automated internet research triggers for grounding AI responses in real-time verified data.
 
-### 🍱 Multi-modal Capabilities
-- **Multimedia Input**: Supports Image Analysis, Audio Transcription (Local Whisper), and PDF Processing.
-- **Dynamic Content Generation**: Local Image Generation (Stable Diffusion) and Professional PDF Report creation.
-- **Web Surfing**: Automated scraping and summarization of shared URLs.
+### 🍱 Multi-Modal Hub
+- **Llava Vision**: Seamless analysis of user-uploaded imagery integrated into the conversational flow.
+- **Whisper & Qwen-TTS**: Local audio transcription paired with **Emotion-Aware Speech Synthesis** (Detects happy/sad/excited/professional tones).
+- **Neural PDF Engine**:
+    - **Parsing**: Advanced extraction of context from user-uploaded PDFs.
+    - **Generation**: Clean, professional PDF report creation from AI interactions.
 
-### 🎭 Premium User Experience
-- **Neural Interface UI**: Sleek, glassmorphic design with vibrant animations and sci-fi aesthetics.
-- **Energy Ring Portal**: A symmetrical, glowing energy ring with a dense, swirling particle cloud that reacts to the assistant's voice.
-- **Interactive Code Sandbox**: Execute JavaScript and Python code directly within the chat interface.
-- **Voice Synthesis (TTS)**: High-quality neural voices for immersive interaction.
-
-### 🛠️ Developer Tools
-- **Synaptic Feedback**: Loop-back feedback system for continuous AI refinement.
-- **Neural Autocomplete**: Debounced completions and suggestions for faster interaction.
-- **Task Queuing (Redis)**: Robust background processing for mission-critical responses.
+### 🍱 Developer Ecosystem
+- **Interactive Sandbox**: Isolated backend execution environment for **JavaScript and Python**, allowing real-time algorithm testing.
+- **Stable Diffusion Portal**: Integration for local text-to-image generation via optimized API bridges.
+- **Session Continuity**: Multi-turn persistence with cross-chat memory and synaptic feedback loops.
 
 ---
 
-## 🛠️ Technical Stack
+## 📂 System Architecture
 
-- **Frontend**: React, Vite, Framer Motion, Tailwind CSS, Lucide Icons, Socket.io-client.
-- **Backend**: Node.js, Express, Socket.io, Mongoose (MongoDB).
-- **Architecture**: Modular Domain-Driven Design with BullMQ (Redis) task queuing.
-- **AI Core**: Ollama (Llama3.2:1b/Llava), Local Whisper Bridge (Python), Stable Diffusion (Local API).
-- **Processing**: Cheerio (Scraping), PDF-parse, Axios.
+### ⚙️ Backend Module Map (`/backend`)
+- **`src/config`**: Dedicated handlers for MongoDB, Socket.io, and Redis-less task queuing.
+- **`src/services`**: Domain-specific logic for LLM orchestration, Voice (Whisper/Qwen), PDF generation, and Web Research.
+- **`src/sockets`**: High-performance event handlers for real-time streaming and state synchronization.
 
----
-
-## 📂 Project Structure
-
-```text
-/backend
-  /src
-    /config     - Database, Socket, and Redis initialization
-    /middleware - Express error handling and uploads
-    /queues     - BullMQ task processing and workers
-    /sockets    - Domain-specific event listeners
-  /models       - Mongoose schemas (Chat, Memory)
-  /services     - LLM, Image Gen, Search, and PDF logic
-/frontend
-  /src/components - Reusable UI components (InputBar, Visualizer, etc.)
-  /src/App.jsx    - Main application state and socket logic
-```
+### 🎨 Frontend Module Map (`/frontend`)
+- **`src/components`**: Glassmorphic UI library (Particles, Energy Ring, Sandbox Panel, Neural Input).
+- **`src/App.jsx`**: Central Neural Interface managing socket state, audio queues, and model preferences.
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Multi-Model Deployment Guide
+
+SYNAPSE is optimized for systems with **6GB+ VRAM (e.g., RTX 4050)**.
+
+| Component | Target Model | Resource Profile |
+|---|---|---|
+| **Reasoning** | `qwen2.5:7b` | ~4GB VRAM |
+| **Coding** | `deepseek-coder:6.7b` | ~4GB VRAM |
+| **Casual** | `llama3.2:3b` | ~2B VRAM |
+| **Vision** | `llava` | ~5GB VRAM |
+| **Audio** | `Qwen3-TTS-0.6B` | ~1.5GB VRAM |
+
+---
+
+## 🛠️ Quick Start
 
 ### 1. Prerequisites
-- **Node.js** (v18+)
-- **MongoDB** (Local instance on port 27017)
-- **Ollama** (Running locally with `llama3.2:1b`, `llama3`, and `llava` models)
-- **Redis** (Optional, for advanced task queuing)
-- **Python** (For local Whisper and TTS services)
+- **Node.js** (v18+) & **Python 3.10+** (with `pip install qwen-tts torch soundfile`)
+- **Ollama** running locally with the models listed above.
+- **MongoDB** local instance.
 
-### 2. Environment Setup
-Create a `.env` file in the `/backend` directory:
-```env
-PORT=3001
-MONGO_URI=mongodb://localhost:27017/
-DbName=LLMmemory
-OLLAMA_MODEL=llama3.2:1b
-OLLAMA_BASE_URL=http://localhost:11434
-BASE_URL=http://localhost:3001
+### 2. Initialization
+```bash
+# Clone and setup backend
+cd backend && npm install
+# Clone and setup frontend
+cd frontend && npm install
 ```
 
-Create a `.env` file in the `/frontend` directory:
-```env
-VITE_API_URL=http://localhost:3001
-```
+### 3. Run
+```bash
+# Terminal 1: Backend
+cd backend && npm run dev
 
-### 3. Installation
-```powershell
-# Install backend dependencies
-cd backend
-npm install
-
-# Install frontend dependencies
-cd ../frontend
-npm install
-```
-
-### 4. Run Development Servers
-```powershell
-# Start Backend
-cd backend
-npm run dev
-
-# Start Frontend
-cd frontend
-npm run dev
+# Terminal 2: Frontend
+cd frontend && npm run dev
 ```
 
 ---
 
-## 🧪 Automated Testing
-
-SYNAPSE includes a comprehensive 8-step automated test suite to verify the integrity of the RAG pipeline, check for hallucinations, and ensure memory recall.
-
-To run the automated tests:
-```powershell
-cd backend
-npm test
+## 🧪 RAG Integrity Audit
+SYNAPSE includes a rigorous 8-point test suite for RAG validation:
+```bash
+cd backend && npm test
 ```
-The test suite will check:
-1. RAG Integrity
-2. Out-of-Domain Rejection
-3. Context Override
-4. Prompt Strength (Empty Context)
-5. Relevance Noise Filtering
-6. Real-Time Routing Triggers
-7. Chunk Quality
-8. Multi-turn Memory
+Tests: *Integrity, OOD Rejection, Context Override, Prompt Strength, Relevance Filtering, Real-Time Routing, Chunk Quality, and Multi-turn Memory.*
 
 ---
 
-## 🛡️ Recent Achievements & Fixes
-- ✅ **Local Optimization**: Migrated to a lightweight `llama3.2:1b` model for systems with limited RAM.
-- ✅ **Port Conflict Resolution**: Moved backend to `3001` and synchronized frontend `.env` configuration.
-- ✅ **Mongoose Stability**: Modernized database middleware to prevent `next()` function errors.
-- ✅ **Modular Backend**: Restructured `app.js` and `chatHandler.js` into domain-specific modules.
-- ✅ **Redis Integration**: Introduced BullMQ for high-reliability background task processing.
+## 🛡️ Recent Achievements (V3.0)
+- ✅ **Fixed React Loop**: Optimized state dependencies in `InputBar` and `ChatWindow` to eliminate re-render cycles.
+- ✅ **Dual-Model Routing**: Fully implemented intent-based switching between Reasoning and Coding models.
+- ✅ **Emotional TTS**: Migrated from Edge-TTS to a local Qwen3-TTS system with dynamic tone detection.
+- ✅ **Sandbox Integration**: Launched the Interactive Code Sandbox for live JS/Python execution.
+- ✅ **Storage Cleanup**: Automated asset lifecycle management (Auto-deletion of processed uploads).
 
 ---
 
-*“Bridging the gap between human intent and neural intelligence.”*
+*“Engineering the future of neural interaction.”*
