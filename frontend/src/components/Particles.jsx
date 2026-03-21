@@ -1,5 +1,11 @@
 import React, { useMemo } from 'react';
+// eslint-disable-next-line no-unused-vars
 import { motion } from 'framer-motion';
+
+const seededRandom = (seed) => {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
 
 const Particle = ({ delay, duration, x, size, isActive }) => (
   <motion.div
@@ -21,16 +27,21 @@ const Particle = ({ delay, duration, x, size, isActive }) => (
   />
 );
 
-const Particles = ({ isSpeaking }) => {
+const Particles = React.memo(({ isSpeaking }) => {
   const particleCount = isSpeaking ? 40 : 15;
+  
   const particles = useMemo(() => {
-    return Array.from({ length: particleCount }).map((_, i) => ({
-      id: i,
-      delay: Math.random() * 10,
-      duration: 10 + Math.random() * 15,
-      x: Math.random() * 100,
-      size: 1 + Math.random() * 3
-    }));
+    const baseSeed = 12345 + particleCount;
+    return Array.from({ length: particleCount }).map((_, i) => {
+      const seed = baseSeed + i * 17;
+      return {
+        id: i,
+        delay: seededRandom(seed) * 10,
+        duration: 10 + seededRandom(seed + 1) * 15,
+        x: seededRandom(seed + 2) * 100,
+        size: 1 + seededRandom(seed + 3) * 3
+      };
+    });
   }, [particleCount]);
 
   return (
@@ -40,6 +51,8 @@ const Particles = ({ isSpeaking }) => {
       ))}
     </div>
   );
-};
+});
 
-export default React.memo(Particles);
+Particles.displayName = 'Particles';
+
+export default Particles;

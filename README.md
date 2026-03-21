@@ -25,6 +25,7 @@ SYNAPSE is a cutting-edge, multi-modal AI assistant designed for seamless intera
 ### 🛠️ Developer Tools
 - **Synaptic Feedback**: Loop-back feedback system for continuous AI refinement.
 - **Neural Autocomplete**: Debounced completions and suggestions for faster interaction.
+- **Task Queuing (Redis)**: Robust background processing for mission-critical responses.
 
 ---
 
@@ -32,7 +33,8 @@ SYNAPSE is a cutting-edge, multi-modal AI assistant designed for seamless intera
 
 - **Frontend**: React, Vite, Framer Motion, Tailwind CSS, Lucide Icons, Socket.io-client.
 - **Backend**: Node.js, Express, Socket.io, Mongoose (MongoDB).
-- **AI Core**: Ollama (Llama3/Llava), Local Whisper Bridge (Python), Stable Diffusion (Local API).
+- **Architecture**: Modular Domain-Driven Design with BullMQ (Redis) task queuing.
+- **AI Core**: Ollama (Llama3.2:1b/Llava), Local Whisper Bridge (Python), Stable Diffusion (Local API).
 - **Processing**: Cheerio (Scraping), PDF-parse, Axios.
 
 ---
@@ -41,11 +43,13 @@ SYNAPSE is a cutting-edge, multi-modal AI assistant designed for seamless intera
 
 ```text
 /backend
+  /src
+    /config     - Database, Socket, and Redis initialization
+    /middleware - Express error handling and uploads
+    /queues     - BullMQ task processing and workers
+    /sockets    - Domain-specific event listeners
   /models       - Mongoose schemas (Chat, Memory)
-  /rag          - Vector storage and retrieval logic
-  /routes       - REST APIs (Upload, Sandbox, Config)
   /services     - LLM, Image Gen, Search, and PDF logic
-  /sockets      - Real-time chatHandler and event logic
 /frontend
   /src/components - Reusable UI components (InputBar, Visualizer, etc.)
   /src/App.jsx    - Main application state and socket logic
@@ -57,18 +61,25 @@ SYNAPSE is a cutting-edge, multi-modal AI assistant designed for seamless intera
 
 ### 1. Prerequisites
 - **Node.js** (v18+)
-- **MongoDB** (Local or Atlas)
-- **Ollama** (Running locally with `llama3` and `llava` models)
+- **MongoDB** (Local instance on port 27017)
+- **Ollama** (Running locally with `llama3.2:1b`, `llama3`, and `llava` models)
+- **Redis** (Optional, for advanced task queuing)
 - **Python** (For local Whisper and TTS services)
 
 ### 2. Environment Setup
 Create a `.env` file in the `/backend` directory:
 ```env
-PORT=3000
-MONGO_URI=mongodb://localhost:27017/synapse
+PORT=3001
+MONGO_URI=mongodb://localhost:27017/
+DbName=LLMmemory
+OLLAMA_MODEL=llama3.2:1b
 OLLAMA_BASE_URL=http://localhost:11434
-OPERATOR_NAME=YourName
-BASE_URL=http://localhost:3000
+BASE_URL=http://localhost:3001
+```
+
+Create a `.env` file in the `/frontend` directory:
+```env
+VITE_API_URL=http://localhost:3001
 ```
 
 ### 3. Installation
@@ -95,28 +106,6 @@ npm run dev
 
 ---
 
-## 🐳 Docker Deployment
-
-For a streamlined setup, you can run the entire **SYNAPSE** stack using Docker Compose. This handles the Frontend, Backend, and MongoDB automatically.
-
-### 1. Prerequisites
-- **Docker** and **Docker Compose** installed.
-- **Ollama** running on your host machine (if using local LLM).
-
-### 2. Launching with Docker
-```powershell
-docker-compose up --build
-```
-
-### 3. Accessing the Application
-- **Frontend**: [http://localhost:5173](http://localhost:5173)
-- **Backend API**: [http://localhost:3000](http://localhost:3000)
-
-> [!NOTE]
-> The Docker setup is configured to communicate with Ollama and Stable Diffusion services running on your **host machine** via `host.docker.internal`. Ensure these services are accessible.
-
----
-
 ## 🧪 Automated Testing
 
 SYNAPSE includes a comprehensive 8-step automated test suite to verify the integrity of the RAG pipeline, check for hallucinations, and ensure memory recall.
@@ -139,11 +128,11 @@ The test suite will check:
 ---
 
 ## 🛡️ Recent Achievements & Fixes
-- ✅ **3D Neural Sphere**: Redesigned the voice visualizer for a symmetrical 3D orbital effect.
-- ✅ **Energy Ring Portal**: Implemented a high-fidelity glowing portal visualizer with swirl particles.
-- ✅ **Flexible Media Storage**: Fixed chat validation to allow messages with only media (images/audio).
-- ✅ **Internet Research Pro**: Enhanced automated search triggers for real-time context.
-- ✅ **Docker Readiness**: Added full Docker support with health checks and streamlined deployment.
+- ✅ **Local Optimization**: Migrated to a lightweight `llama3.2:1b` model for systems with limited RAM.
+- ✅ **Port Conflict Resolution**: Moved backend to `3001` and synchronized frontend `.env` configuration.
+- ✅ **Mongoose Stability**: Modernized database middleware to prevent `next()` function errors.
+- ✅ **Modular Backend**: Restructured `app.js` and `chatHandler.js` into domain-specific modules.
+- ✅ **Redis Integration**: Introduced BullMQ for high-reliability background task processing.
 
 ---
 
