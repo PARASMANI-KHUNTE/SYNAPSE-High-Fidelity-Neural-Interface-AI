@@ -11,31 +11,123 @@ const EXECUTION_TIMEOUT = 15000;
 const MAX_OUTPUT_SIZE = 512 * 1024;
 const MAX_CODE_LENGTH = 50000;
 
-const sanitizeCode = (code) => {
+const sanitizeCode = (code, language) => {
   if (!code || typeof code !== "string") return "";
 
   let sanitized = code.substring(0, MAX_CODE_LENGTH);
-  const dangerousPatterns = [
-    /require\s*\(\s*['"]child_process['"]\s*\)/gi,
-    /import\s+.*from\s+['"]child_process['"]/gi,
-    /from\s+subprocess\s+import/gi,
-    /os\.system/gi,
-    /os\.popen/gi,
-    /subprocess\./gi,
-    /process\.exit/gi,
-    /process\.kill/gi,
-    /child_process/gi,
-    /require\s*\(\s*['"]fs['"]\s*\)/gi,
-    /import\s+.*from\s+['"]fs['"]/gi,
-    /fs\.(readFile|writeFile|unlink|rm|rmdir|mkdir)/gi,
-    /require\s*\(\s*['"](net|http|https|dns|tls|dgram)['"]\s*\)/gi,
-    /import\s+.*from\s+['"](net|http|https|dns|tls|dgram)['"]/gi,
-    /while\s*\(\s*(true|1)\s*\)/gi,
-    /for\s*\(\s*;\s*;\s*\)/gi
+  
+  const commonDangerousPatterns = [
+    /process\.exit\s*\(/gi,
+    /process\.kill\s*\(/gi,
+    /\bexit\s*\(\s*\)/gi,
+    /\bsys\.exit\s*\(/gi,
+    /\bquit\s*\(/gi,
+    /__import__\s*\(/gi,
+    /eval\s*\(/gi,
+    /exec\s*\(/gi,
+    /compile\s*\(/gi,
+    /open\s*\([^)]*['"]\/etc/gi,
+    /open\s*\([^)]*['"]\/root/gi,
+    /open\s*\([^)]*['"]\/home/gi,
+    /with\s+open\s*\([^)]*['"]\/etc/gi,
+    /with\s+open\s*\([^)]*['"]\/root/gi,
+    /with\s+open\s*\([^)]*['"]\/home/gi,
+    /\.\.\//g,
+    /<\s*script/gi,
+    /<\s*\?php/gi,
+    /<\s*%/gi,
+    /\bcurl\s+/gi,
+    /\bwget\s+/gi,
+    /socket\s*\./gi,
+    /connect\s*\(\s*['"][^'"]*:22/gi,
+    /0x[0-9a-f]+:\/\//gi,
   ];
 
-  for (const pattern of dangerousPatterns) {
-    sanitized = sanitized.replace(pattern, "// [REMOVED BY SANDBOX]");
+  const jsDangerousPatterns = [
+    /require\s*\(\s*['"]child_process['"]\s*\)/gi,
+    /require\s*\(\s*['"]fs['"]\s*\)/gi,
+    /require\s*\(\s*['"](net|http|https|dns|tls|dgram|perf_hooks|inspector|trace_events)['"]\s*\)/gi,
+    /import\s+.*from\s+['"]child_process['"]/gi,
+    /import\s+.*from\s+['"]fs['"]/gi,
+    /import\s+.*from\s+['"](net|http|https|dns|tls|dgram|perf_hooks|inspector|trace_events)['"]/gi,
+    /child_process/gi,
+    /fetch\s*\(\s*['"]http/gi,
+    /XMLHttpRequest/gi,
+    /globalThis\.(process|require|module)/gi,
+    /global\[/gi,
+    /Function\(/gi,
+    /new\s+Function\s*\(/gi,
+    /eval\s*\(/gi,
+  ];
+
+  const pythonDangerousPatterns = [
+    /from\s+subprocess\s+import/gi,
+    /import\s+subprocess/gi,
+    /os\.system\s*\(/gi,
+    /os\.popen\s*\(/gi,
+    /os\.spawn/gi,
+    /subprocess\./gi,
+    /import\s+os/gi,
+    /import\s+sys/gi,
+    /__import__\s*\(/gi,
+    /importlib\./gi,
+    /exec\s*\(/gi,
+    /compile\s*\(/gi,
+    /eval\s*\(/gi,
+    /open\s*\([^)]*\)/gi,
+    /with\s+open\s*\(/gi,
+    /urllib\s*\./gi,
+    /requests\s*\./gi,
+    /httpx\s*\./gi,
+    /socket\s*\./gi,
+    /pickle\s*\./gi,
+    /marshal\s*\./gi,
+    /pty\s*\./gi,
+    /tty\s*\./gi,
+    /termios\s*\./gi,
+    /resource\s*\./gi,
+    /multiprocessing\s*\./gi,
+    /ctypes\s*\./gi,
+    /pwn\s*\./gi,
+    /socket\s*\./gi,
+    /struct\s*\.\w+\s*\(/gi,
+    /os\.chdir\s*\(/gi,
+    /os\.chmod\s*\(/gi,
+    /os\.chown\s*\(/gi,
+    /os\.link\s*\(/gi,
+    /os\.mkdir\s*\(/gi,
+    /os\.mknod\s*\(/gi,
+    /os\.remove\s*\(/gi,
+    /os\.rename\s*\(/gi,
+    /os\.rmdir\s*\(/gi,
+    /os\.symlink\s*\(/gi,
+    /os\.unlink\s*\(/gi,
+    /os\.utime\s*\(/gi,
+  ];
+
+  const patterns = [...commonDangerousPatterns];
+  
+  if (language === "javascript" || language === "js" || language === "node") {
+    patterns.push(...jsDangerousPatterns);
+  } else if (language === "python" || language === "python3" || language === "py") {
+    patterns.push(...pythonDangerousPatterns);
+  }
+
+  for (const pattern of patterns) {
+    sanitized = sanitized.replace(pattern, "// [BLOCKED]");
+  }
+
+  const commentsWithCode = [
+    /#.*(?:import|require|exec|eval|system|subprocess)/gi,
+    /\/\/.*(?:require|fetch|child_process|exec|eval)/gi,
+    /#.*(?:curl|wget|chmod|chown|sudo|passwd|shadow)/gi,
+  ];
+  
+  for (const pattern of commentsWithCode) {
+    sanitized = sanitized.replace(pattern, (match) => {
+      const prefix = match.match(/^(\s*#|\s*\/\/)/)?.[0] || "";
+      return prefix + " [CODE BLOCKED IN COMMENT]";
+    });
   }
 
   return sanitized;
@@ -110,9 +202,13 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const sanitizedCode = sanitizeCode(code);
+    const sanitizedCode = sanitizeCode(code, language);
     const filename = `sandbox_${requestId}_${Date.now()}.${langConfig.ext}`;
     filepath = path.join(os.tmpdir(), filename);
+    
+    if (!fs.existsSync(os.tmpdir())) {
+      fs.mkdirSync(os.tmpdir(), { recursive: true });
+    }
     fs.writeFileSync(filepath, sanitizedCode, { mode: 0o600 });
 
     console.log(`[Sandbox:${requestId}] Executing ${language} with ${langConfig.command}`);

@@ -97,3 +97,14 @@ Tests: *Integrity, OOD Rejection, Context Override, Prompt Strength, Relevance F
 ---
 
 *“Engineering the future of neural interaction.”*
+
+---
+
+## Documentation
+
+- Current implementation status and progress report: [Docs/IMPLEMENTATION_REPORT.md](Docs/IMPLEMENTATION_REPORT.md)
+- Architecture overview: [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md)
+- Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
+- Changelog: [Docs/CHANGELOG.md](Docs/CHANGELOG.md)
+- Testing and verification guide: [Docs/TESTING_GUIDE.md](Docs/TESTING_GUIDE.md)
+

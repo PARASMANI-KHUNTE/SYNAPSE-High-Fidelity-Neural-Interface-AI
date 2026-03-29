@@ -1,15 +1,13 @@
 import { Server } from "socket.io";
+import config from "../utils/config.js";
+import logger from "../utils/logger.js";
 
 let io;
 
-/**
- * Create and return the Socket.io server instance.
- * Event listeners are attached separately via sockets/index.js
- */
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: config.cors.origins,
       methods: ["GET", "POST"]
     },
     pingTimeout: 60000,
@@ -17,7 +15,7 @@ export const initSocket = (server) => {
     transports: ["websocket", "polling"]
   });
 
-  console.log("🚀 Socket.io initialized");
+  logger.info({ origins: config.cors.origins }, "Socket.io initialized");
   return io;
 };
 

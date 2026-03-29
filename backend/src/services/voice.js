@@ -24,6 +24,14 @@ const runExecFile = (file, args, options = {}) =>
     });
   });
 
+const ensureUploadsDir = () => {
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  return uploadsDir;
+};
+
 const scheduleCleanup = (outputPath, filename) => {
   setTimeout(() => {
     fs.unlink(outputPath, (err) => {
@@ -172,6 +180,8 @@ export const generateTTS = async (text, voicePref = "male") => {
   if (!text || text.length < 2) {
     return null;
   }
+
+  ensureUploadsDir();
 
   const preferredEngine = process.env.TTS_ENGINE || (process.platform === "win32" ? "edge" : "qwen");
   const attempts = preferredEngine === "native"

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-// eslint-disable-next-line no-unused-vars
+ 
 import { motion } from 'framer-motion';
 
 const seededRandom = (seed) => {
@@ -8,82 +8,121 @@ const seededRandom = (seed) => {
 };
 
 const VoiceVisualizer = React.memo(({ isActive }) => {
-  const particleCount = 20;
-  
+  const particleCount = 16;
+
   const particles = useMemo(() => {
-    const baseSeed = 54321 + particleCount;
+    const base = 99991 + particleCount;
     return Array.from({ length: particleCount }).map((_, i) => {
-      const seed = baseSeed + i * 13;
+      const s = base + i * 17;
+      const angle = (i / particleCount) * Math.PI * 2;
       return {
-        angle: seededRandom(seed) * Math.PI * 2,
-        radius: 12 + seededRandom(seed + 1) * 12,
-        duration: 2.5 + seededRandom(seed + 2) * 2,
-        delay: seededRandom(seed + 3) * 2.5
+        angle,
+        radius: 22 + seededRandom(s + 1) * 10,
+        duration: 2.2 + seededRandom(s + 2) * 1.8,
+        delay: seededRandom(s + 3) * 2.2,
+        size: 1.5 + seededRandom(s + 4) * 1.5,
       };
     });
-  }, [particleCount]);
-  
+  }, []);
+
   if (!isActive) return null;
-  
+
   return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-      <div className="relative w-20 h-20 flex items-center justify-center">
-        
-        <motion.div 
-          animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.4, 0.2] }}
-          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute w-28 h-28 bg-blue-600/10 rounded-full blur-[30px]"
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
+      <div className="relative" style={{ width: 68, height: 68 }}>
+
+        {/* Outer glow halo */}
+        <motion.div
+          animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.3, 0.15] }}
+          transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute inset-0 rounded-full"
+          style={{
+            background: 'radial-gradient(circle, rgba(168,85,247,0.4) 0%, transparent 70%)',
+            filter: 'blur(16px)',
+          }}
         />
 
+        {/* Amber secondary halo */}
+        <motion.div
+          animate={{ scale: [1.1, 0.95, 1.1], opacity: [0.1, 0.25, 0.1] }}
+          transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+          className="absolute inset-0 rounded-full"
+          style={{
+            margin: '-8px',
+            background: 'radial-gradient(circle, rgba(245,158,11,0.3) 0%, transparent 65%)',
+            filter: 'blur(20px)',
+          }}
+        />
+
+        {/* Orbit ring 1 */}
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+          className="absolute rounded-full"
+          style={{
+            inset: '-4px',
+            border: '1px solid rgba(168,85,247,0.25)',
+          }}
+        />
+
+        {/* Orbit ring 2 - reverse */}
+        <motion.div
+          animate={{ rotate: -360 }}
+          transition={{ duration: 9, repeat: Infinity, ease: 'linear' }}
+          className="absolute rounded-full"
+          style={{
+            inset: '-10px',
+            border: '1px dashed rgba(245,158,11,0.15)',
+          }}
+        />
+
+        {/* Orbiting particles */}
         {particles.map((p, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0 }}
-            animate={{ 
-              opacity: [0, 0.8, 0],
-              rotate: 360,
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{
+              opacity: [0, 0.9, 0],
               scale: [0, 1.2, 0],
+              rotate: 360,
             }}
-            transition={{ 
-              duration: p.duration, 
+            transition={{
+              duration: p.duration,
               repeat: Infinity,
               delay: p.delay,
-              ease: "linear"
+              ease: 'easeInOut',
             }}
-            className="absolute bg-cyan-200 rounded-full shadow-[0_0_4px_#fff]"
-            style={{ 
-              width: '1px',
-              height: '1px',
+            className="absolute rounded-full"
+            style={{
+              width: p.size,
+              height: p.size,
               left: `calc(50% + ${Math.cos(p.angle) * p.radius}px)`,
               top: `calc(50% + ${Math.sin(p.angle) * p.radius}px)`,
-              transformOrigin: `${-Math.cos(p.angle) * p.radius}px ${-Math.sin(p.angle) * p.radius}px`
+              background: i % 3 === 0 ? '#f59e0b' : '#a855f7',
+              boxShadow: i % 3 === 0
+                ? '0 0 6px rgba(245,158,11,0.8)'
+                : '0 0 6px rgba(168,85,247,0.8)',
+              transformOrigin: `${-Math.cos(p.angle) * p.radius}px ${-Math.sin(p.angle) * p.radius}px`,
             }}
           />
         ))}
 
+        {/* Inner pulsing core ring */}
         <motion.div
-          animate={{ 
-            scale: [1, 1.05, 0.98, 1.02, 1],
+          animate={{
+            scale: [1, 1.08, 1],
             boxShadow: [
-              "0 0 10px rgba(34,211,238,0.4), inset 0 0 5px rgba(34,211,238,0.3)",
-              "0 0 25px rgba(6,182,212,0.8), inset 0 0 15px rgba(6,182,212,0.6)",
-              "0 0 10px rgba(34,211,238,0.4), inset 0 0 5px rgba(34,211,238,0.3)"
-            ]
+              '0 0 8px rgba(168,85,247,0.4), inset 0 0 4px rgba(168,85,247,0.2)',
+              '0 0 20px rgba(168,85,247,0.7), inset 0 0 10px rgba(168,85,247,0.5)',
+              '0 0 8px rgba(168,85,247,0.4), inset 0 0 4px rgba(168,85,247,0.2)',
+            ],
           }}
-          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute w-14 h-14 border-[2px] border-cyan-400 rounded-full mix-blend-screen overflow-hidden"
-        />
-
-        <motion.div
-           animate={{ scale: [0.8, 1.1, 0.8], opacity: [0.2, 0.4, 0.2] }}
-           transition={{ duration: 3, repeat: Infinity }}
-           className="absolute w-10 h-10 bg-cyan-500/10 rounded-full blur-xl mix-blend-plus-lighter"
-        />
-
-        <motion.div 
-            animate={{ opacity: [0, 0.5, 0], scale: [0.9, 1.1, 1] }} 
-            transition={{ duration: 1.2, repeat: Infinity }}
-            className="absolute w-18 h-18 border border-white/5 rounded-full shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute rounded-full"
+          style={{
+            inset: '8px',
+            border: '1.5px solid rgba(168,85,247,0.6)',
+          }}
         />
 
       </div>
@@ -92,5 +131,4 @@ const VoiceVisualizer = React.memo(({ isActive }) => {
 });
 
 VoiceVisualizer.displayName = 'VoiceVisualizer';
-
 export default VoiceVisualizer;

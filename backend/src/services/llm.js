@@ -1,6 +1,3 @@
-import { exec } from "child_process";
-import path from "path";
-import fs from "fs";
 import http from "http";
 import https from "https";
 
@@ -28,50 +25,6 @@ const fetchWithTimeout = async (url, options, timeout = OLLAMA_TIMEOUT) => {
   } finally {
     clearTimeout(timeoutId);
   }
-};
-
-export const transcribeAudio = async (filePath) => {
-  return new Promise((resolve) => {
-    console.log(`Transcribing audio locally: ${path.basename(filePath)}...`);
-
-    if (!fs.existsSync(filePath)) {
-      console.error("Audio file not found:", filePath);
-      return resolve("[Transcription Failed: File not found]");
-    }
-
-    const scriptPath = path.join(process.cwd(), "scripts", "transcribe.py");
-
-    if (!fs.existsSync(scriptPath)) {
-      console.error("Transcription script not found:", scriptPath);
-      return resolve("[Transcription Failed: Script not found]");
-    }
-
-    const command = `python "${scriptPath}" "${filePath}"`;
-    const timeout = 60000;
-
-    const proc = exec(command, { timeout }, (error, stdout, stderr) => {
-      if (error) {
-        console.error("Transcription error:", stderr || error.message);
-        if (error.killed) {
-          return resolve("[Transcription Failed: Process timed out]");
-        }
-        return resolve(`[Transcription Failed: ${error.message}]`);
-      }
-
-      const transcription = stdout.trim();
-      if (!transcription) {
-        return resolve("[Transcription Failed: Empty result]");
-      }
-
-      console.log("Transcription complete:", transcription.substring(0, 100));
-      resolve(transcription);
-    });
-
-    proc.on("error", (err) => {
-      console.error("Process spawn error:", err.message);
-      resolve(`[Transcription Failed: ${err.message}]`);
-    });
-  });
 };
 
 export async function generateResponseStream(messages, onChunk, abortSignal, modelOverride = null) {

@@ -136,6 +136,8 @@ const selectConversationHistory = (messages, query) => {
 export const buildChatMessages = ({
   chatMessages = [],
   userMessage = "",
+  memoryContext = {},
+  profileFacts = [],
   currentUserMessage = null,
   operatorName = "Operator",
   ragContext = "",
@@ -144,12 +146,33 @@ export const buildChatMessages = ({
   queryType = "KNOWLEDGE"
 }) => {
   const memoryFacts = extractMemoryFacts(chatMessages);
+  const resolvedProfileFacts = Array.isArray(memoryContext?.profileFacts) && memoryContext.profileFacts.length > 0
+    ? memoryContext.profileFacts
+    : profileFacts;
+  const durableFacts = (resolvedProfileFacts || [])
+    .map((fact) => {
+      if (typeof fact === "string") return fact;
+      return fact?.key && fact?.value ? `${fact.key}: ${fact.value}` : "";
+    })
+    .filter(Boolean)
+    .slice(0, DEFAULT_MEMORY_FACT_LIMIT);
+  const episodicSummaries = (memoryContext?.episodeSummaries || [])
+    .map((episode) => {
+      const topics = episode?.topics?.length ? ` Topics: ${episode.topics.join(", ")}.` : "";
+      return episode?.summary ? `${episode.summary}${topics}` : "";
+    })
+    .filter(Boolean)
+    .slice(0, 2);
+  const mergedFacts = [...new Set([...durableFacts, ...memoryFacts])].slice(0, DEFAULT_MEMORY_FACT_LIMIT);
   const conversationHistory = selectConversationHistory(chatMessages, userMessage);
   const hasVisualInput = Boolean(currentUserMessage?.images?.length);
+  const profileLabel = memoryContext?.profile?.name ? `${operatorName} (${memoryContext.profile.name})` : operatorName;
+  const currentDate = new Date().toISOString().split("T")[0];
   
   const systemParts = hasVisualInput
     ? [
-        `You are SYNAPSE, a vision-capable AI assistant helping your operator, ${operatorName}.`,
+        `You are SYNAPSE, a vision-capable AI assistant helping your operator, ${profileLabel}.`,
+        `Current date: ${currentDate}.`,
         "Vision Directives:",
         "- The current user turn includes attached image data.",
         "- Analyze the attached image directly.",
@@ -158,7 +181,8 @@ export const buildChatMessages = ({
         "- If something is unclear, state uncertainty briefly instead of inventing details."
       ]
     : [
-        `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${operatorName}.`,
+        `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${profileLabel}.`,
+        `Current date: ${currentDate}.`,
         "Core Directives:",
         "- Maintain a natural, helpful, and professional tone.",
         "- Be conversational for greetings and casual chat.",
@@ -166,15 +190,19 @@ export const buildChatMessages = ({
       ];
 
   if (hasVisualInput) {
-    if (memoryFacts.length > 0) {
-      systemParts.push("", "Known Facts about Operator:", ...memoryFacts.map((fact) => `- ${fact}`));
+    if (mergedFacts.length > 0) {
+      systemParts.push("", "Known Facts about Operator:", ...mergedFacts.map((fact) => `- ${fact}`));
     }
   }
 
   if (!hasVisualInput && (queryType === "KNOWLEDGE" || ragContext || searchContext)) {
     systemParts.push(
       "Knowledge Integration Rules:",
+      "- Prefer current web/search context over background model memory for time-sensitive topics.",
       "- Use retrieved knowledge and search results only when they are relevant.",
+      "- Treat knowledge questions as freshness-sensitive when current web data is present.",
+      "- When search context is present, anchor claims in it instead of answering from stale prior knowledge.",
+      "- If current verification is missing for a time-sensitive claim, explicitly say it could not be verified live.",
       "- Proactively provide direct URLs, video links, and source citations found in search results.",
       "- If the query is factual and no data is found in context or training, admit it.",
       "- Do not invent facts or memories.",
@@ -187,8 +215,12 @@ export const buildChatMessages = ({
     );
   }
 
-  if (!hasVisualInput && memoryFacts.length > 0) {
-    systemParts.push("", "Known Facts about Operator:", ...memoryFacts.map((fact) => `- ${fact}`));
+  if (!hasVisualInput && mergedFacts.length > 0) {
+    systemParts.push("", "Known Facts about Operator:", ...mergedFacts.map((fact) => `- ${fact}`));
+  }
+
+  if (!hasVisualInput && episodicSummaries.length > 0) {
+    systemParts.push("", "Relevant Episodic Memory:", ...episodicSummaries.map((summary) => `- ${summary}`));
   }
 
   if (!hasVisualInput && ragContext) {

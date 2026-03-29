@@ -1,9 +1,10 @@
 import express from "express";
 import { upload } from "../middleware/upload.js";
+import { userIdValidator } from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.post("/", upload.single("file"), (req, res) => {
+router.post("/", userIdValidator, upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }

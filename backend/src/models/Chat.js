@@ -101,9 +101,13 @@ chatSchema.statics.cleanupOldChats = async function(daysOld = 90, keepCount = 10
   
   const oldChats = await this.find({
     updatedAt: { $lt: cutoffDate }
-  }).sort({ updatedAt: 1 }).limit(keepCount);
+  }).sort({ updatedAt: 1 });
 
-  const idsToDelete = oldChats.slice(0, Math.max(0, oldChats.length - keepCount)).map(c => c._id);
+  if (oldChats.length <= keepCount) {
+    return 0;
+  }
+
+  const idsToDelete = oldChats.slice(0, oldChats.length - keepCount).map(c => c._id);
   
   if (idsToDelete.length > 0) {
     const result = await this.deleteMany({ _id: { $in: idsToDelete } });

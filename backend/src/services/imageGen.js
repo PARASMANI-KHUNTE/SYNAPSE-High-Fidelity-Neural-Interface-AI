@@ -2,8 +2,18 @@ import axios from "axios";
 import fs from "fs";
 import path from "path";
 
+const ensureUploadsDir = () => {
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  return uploadsDir;
+};
+
 export const generateImage = async (prompt) => {
   try {
+    ensureUploadsDir();
+    
     const apiUrl = process.env.SD_API_URL || "http://localhost:7860/sdapi/v1/txt2img";
     console.log(`🎨 Generating image for prompt: "${prompt}"...`);
     
@@ -14,6 +24,8 @@ export const generateImage = async (prompt) => {
       width: 512,
       height: 512,
       cfg_scale: 7
+    }, {
+      timeout: 60000
     });
 
     const base64Image = response.data.images[0];
@@ -26,6 +38,9 @@ export const generateImage = async (prompt) => {
     return relativePath;
   } catch (err) {
     console.error("Stable Diffusion Error:", err.message);
-    throw new Error("Failed to connect to local Stable Diffusion API. Make sure it's running with --api.");
+    if (err.code === "ECONNREFUSED") {
+      throw new Error("Failed to connect to Stable Diffusion API. Make sure it's running on port 7860.");
+    }
+    throw new Error(`Image generation failed: ${err.message}`);
   }
 };

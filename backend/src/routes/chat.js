@@ -4,10 +4,11 @@ import { getRelevantDocs } from "../rag/retriever.js";
 import { generateResponse } from "../services/llm.js";
 import { buildChatMessages } from "../services/chatContext.js";
 import { classifyQuery, resolveModelPreference } from "../services/chatRouter.js";
+import { userIdValidator } from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.post("/", async (req, res) => {
+router.post("/", userIdValidator, async (req, res) => {
   try {
     const { userId, chatId, message, modelPreference, customModel } = req.body;
 
@@ -69,8 +70,7 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("Chat route error:", err.message);
     res.status(500).json({
-      error: "Failed to generate response",
-      details: err.message
+      error: "Failed to generate response"
     });
   }
 });

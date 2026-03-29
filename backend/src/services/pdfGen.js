@@ -104,7 +104,16 @@ export const generatePDF = async (text, fileName) => {
       
       doc.end();
       
+      const finishTimeout = setTimeout(() => {
+        if (fs.existsSync(filePath)) {
+          resolve(relativePath);
+        } else {
+          reject(new Error("PDF file was not created within timeout"));
+        }
+      }, 10000);
+      
       stream.on("finish", () => {
+        clearTimeout(finishTimeout);
         if (fs.existsSync(filePath)) {
           resolve(relativePath);
         } else {
