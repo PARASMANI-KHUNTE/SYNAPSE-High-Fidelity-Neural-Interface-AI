@@ -62,6 +62,8 @@ class SimpleQueue {
         job.error = err.message;
         job.status = "failed";
         job.rejectFinished(err);
+      } finally {
+        this.jobs.delete(jobId);
       }
     }
 

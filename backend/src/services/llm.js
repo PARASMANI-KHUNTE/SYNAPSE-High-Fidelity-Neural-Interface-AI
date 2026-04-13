@@ -1,6 +1,3 @@
-import http from "http";
-import https from "https";
-
 const getOllamaModel = (hasImages) =>
   hasImages ? (process.env.OLLAMA_VISION_MODEL || "llava") : (process.env.OLLAMA_MODEL || "llama3");
 

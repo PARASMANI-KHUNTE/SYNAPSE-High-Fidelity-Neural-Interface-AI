@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { isInternalHostname } from "../utils/networkSecurity.js";
 
 const SEARCH_TIMEOUT = 12000;
 const MAX_IMAGES = 4;
@@ -13,16 +14,24 @@ const isValidImageUrl = (url) => {
   const trimmed = url.trim();
   
   if (trimmed.length < 10 || trimmed.length > 500) return false;
-  
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
-  
-  const invalidPatterns = ["localhost", "127.0.0.1", "0.0.0.0", "data:", "blob:", "javascript:"];
-  if (invalidPatterns.some(p => trimmed.toLowerCase().includes(p))) return false;
-  
+
+  if (trimmed.toLowerCase().startsWith("data:") || trimmed.toLowerCase().startsWith("blob:") || trimmed.toLowerCase().startsWith("javascript:")) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return false;
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  if (isInternalHostname(parsed.hostname)) return false;
+
+  const pathname = parsed.pathname.toLowerCase();
   const validExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"];
-  const hasValidExtension = validExtensions.some(ext => trimmed.toLowerCase().includes(ext));
-  
-  return hasValidExtension || trimmed.includes("bing") || trimmed.includes("google") || trimmed.includes("images");
+  return validExtensions.some(ext => pathname.endsWith(ext));
 };
 
 export const searchReferenceImages = async (query) => {

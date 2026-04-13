@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { isInternalHostname } from "../utils/networkSecurity.js";
 
 const MAX_TEXT_LENGTH = 4000;
 
@@ -14,6 +15,10 @@ const normalizeUrl = (value = "") => {
 
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("Only http and https URLs are allowed");
+  }
+
+  if (isInternalHostname(parsed.hostname)) {
+    throw new Error("Internal and local network targets are not allowed");
   }
 
   return parsed.toString();

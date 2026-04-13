@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -41,6 +42,27 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const sandboxLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.webm', '.mp3', '.wav', '.ogg'];
 
 app.use("/uploads", (req, res, next) => {
@@ -72,12 +94,12 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-app.use("/api/chat", chatRoutes);
+app.use("/api/chat", chatLimiter, chatRoutes);
 app.use("/api/memory", memoryRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/triggers", triggerRoutes);
-app.use("/api/upload", uploadRoutes);
-app.use("/api/sandbox", sandboxRoutes);
+app.use("/api/upload", uploadLimiter, uploadRoutes);
+app.use("/api/sandbox", sandboxLimiter, sandboxRoutes);
 
 app.use(errorHandler);
 
