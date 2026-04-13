@@ -151,8 +151,18 @@ export const transcribeAudio = async (filePath) => {
       return resolve("[Transcription Failed: Script not found]");
     }
 
-    const command = `python "${transcribeScriptPath}" "${filePath}"`;
-    exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
+    execFile("python", [transcribeScriptPath, filePath], {
+      timeout: 60000,
+      windowsHide: true,
+      env: {
+        PATH: process.env.PATH || "",
+        PYTHONUTF8: "1",
+        HOME: process.env.HOME || process.cwd(),
+        TMPDIR: process.env.TMPDIR || process.env.TMP || process.cwd(),
+        TEMP: process.env.TEMP || process.env.TMP || process.cwd(),
+        TMP: process.env.TMP || process.cwd()
+      }
+    }, (error, stdout, stderr) => {
       if (error) {
         console.error("Transcription error:", stderr || error.message);
         return resolve(`[Transcription Failed: ${error.message}]`);

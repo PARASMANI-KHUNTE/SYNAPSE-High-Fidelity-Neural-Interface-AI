@@ -153,7 +153,15 @@ const runSandboxFile = ({ command, filepath }) =>
     const proc = execFile(command, [filepath], {
       timeout: EXECUTION_TIMEOUT,
       maxBuffer: MAX_OUTPUT_SIZE,
-      env: { ...process.env, NODE_ENV: "production", PYTHONUTF8: "1" },
+      env: {
+        PATH: process.env.PATH || "",
+        NODE_ENV: "production",
+        PYTHONUTF8: "1",
+        HOME: os.tmpdir(),
+        TMPDIR: os.tmpdir(),
+        TEMP: os.tmpdir(),
+        TMP: os.tmpdir()
+      },
       windowsHide: true
     }, (error, stdout, stderr) => {
       if (error) {

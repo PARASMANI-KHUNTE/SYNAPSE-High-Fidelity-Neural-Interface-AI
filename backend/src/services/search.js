@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { isInternalHostname } from "../utils/networkSecurity.js";
 
 const SEARCH_TIMEOUT = 15000;
 const MAX_RESULTS = 5;
@@ -10,7 +11,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const isValidUrl = (url) => {
   try {
     const parsed = new URL(url);
-    return ["http:", "https:"].includes(parsed.protocol) && !parsed.hostname.includes("localhost");
+    return ["http:", "https:"].includes(parsed.protocol) && !isInternalHostname(parsed.hostname);
   } catch {
     return false;
   }

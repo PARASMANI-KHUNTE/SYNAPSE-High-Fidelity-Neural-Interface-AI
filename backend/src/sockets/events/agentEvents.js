@@ -4,9 +4,20 @@ import { getAllTools } from "../../agent/toolRegistry.js";
 import logger from "../../utils/logger.js";
 
 const pendingConfirmations = new Map();
+const CONFIRMATION_TTL_MS = 10 * 60 * 1000;
+
+const prunePendingConfirmations = () => {
+  const now = Date.now();
+  for (const [token, pending] of pendingConfirmations.entries()) {
+    if (!pending?.createdAt || now - pending.createdAt > CONFIRMATION_TTL_MS) {
+      pendingConfirmations.delete(token);
+    }
+  }
+};
 
 export const agentEvents = (io, socket) => {
   const runAgentTool = async (payload = {}) => {
+    prunePendingConfirmations();
     const {
       tool,
       params = {},
@@ -104,6 +115,7 @@ export const agentEvents = (io, socket) => {
   socket.on("agent:run", runAgentTool);
 
   socket.on("agent:confirm", async ({ token }) => {
+    prunePendingConfirmations();
     const pending = pendingConfirmations.get(token);
     if (!pending || pending.socketId !== socket.id) {
       socket.emit("agent:tool:error", {
@@ -124,6 +136,7 @@ export const agentEvents = (io, socket) => {
   });
 
   socket.on("agent:cancel", ({ token }) => {
+    prunePendingConfirmations();
     const pending = pendingConfirmations.get(token);
     if (pending?.socketId === socket.id) {
       pendingConfirmations.delete(token);
@@ -131,6 +144,14 @@ export const agentEvents = (io, socket) => {
         success: false,
         error: "Agent action cancelled"
       });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    for (const [token, pending] of pendingConfirmations.entries()) {
+      if (pending?.socketId === socket.id) {
+        pendingConfirmations.delete(token);
+      }
     }
   });
 };
