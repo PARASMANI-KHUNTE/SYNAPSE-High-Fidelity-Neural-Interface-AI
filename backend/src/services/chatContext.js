@@ -143,7 +143,8 @@ export const buildChatMessages = ({
   ragContext = "",
   searchContext = "",
   attachmentContext = "",
-  queryType = "KNOWLEDGE"
+  queryType = "KNOWLEDGE",
+  voiceGender = "male"
 }) => {
   const memoryFacts = extractMemoryFacts(chatMessages);
   const resolvedProfileFacts = Array.isArray(memoryContext?.profileFacts) && memoryContext.profileFacts.length > 0
@@ -168,6 +169,9 @@ export const buildChatMessages = ({
   const hasVisualInput = Boolean(currentUserMessage?.images?.length);
   const profileLabel = memoryContext?.profile?.name ? `${operatorName} (${memoryContext.profile.name})` : operatorName;
   const currentDate = new Date().toISOString().split("T")[0];
+  const genderStyleLine = String(voiceGender || "male").toLowerCase() === "female"
+    ? "- If responding in Hindi, use feminine self-reference and agreement naturally (e.g., main taiyar hoon, main samajh sakti hoon)."
+    : "- If responding in Hindi, use masculine self-reference and agreement naturally (e.g., main taiyar hoon, main samajh sakta hoon).";
   
   const systemParts = hasVisualInput
     ? [
@@ -178,7 +182,8 @@ export const buildChatMessages = ({
         "- Analyze the attached image directly.",
         "- Do not say you cannot see images.",
         "- Describe visible objects, text, layout, style, colors, and notable details grounded in the image.",
-        "- If something is unclear, state uncertainty briefly instead of inventing details."
+        "- If something is unclear, state uncertainty briefly instead of inventing details.",
+        genderStyleLine
       ]
     : [
         `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${profileLabel}.`,
@@ -186,7 +191,8 @@ export const buildChatMessages = ({
         "Core Directives:",
         "- Maintain a natural, helpful, and professional tone.",
         "- Be conversational for greetings and casual chat.",
-        "- Use conversation history for continuity and memory facts for stable user details."
+        "- Use conversation history for continuity and memory facts for stable user details.",
+        genderStyleLine
       ];
 
   if (hasVisualInput) {

@@ -56,11 +56,11 @@ INDIAN_EDGE_VOICES = {
 }
 
 EDGE_PROSODY = {
-    "excited": {"rate": "+18%", "pitch": "+6Hz", "volume": "+8%"},
-    "happy": {"rate": "+8%", "pitch": "+2Hz", "volume": "+4%"},
-    "sad": {"rate": "-14%", "pitch": "-4Hz", "volume": "-4%"},
-    "empathetic": {"rate": "-8%", "pitch": "-2Hz", "volume": "+2%"},
-    "professional": {"rate": "-2%", "pitch": "+0Hz", "volume": "+0%"},
+    "excited": {"rate": "+12%", "pitch": "+3Hz", "volume": "+6%"},
+    "happy": {"rate": "+6%", "pitch": "+1Hz", "volume": "+3%"},
+    "sad": {"rate": "-10%", "pitch": "-2Hz", "volume": "-2%"},
+    "empathetic": {"rate": "-5%", "pitch": "-1Hz", "volume": "+2%"},
+    "professional": {"rate": "-1%", "pitch": "+0Hz", "volume": "+0%"},
     "neutral": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
 }
 

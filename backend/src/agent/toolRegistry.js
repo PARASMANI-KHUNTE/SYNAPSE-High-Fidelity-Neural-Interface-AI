@@ -1,7 +1,6 @@
 import browserTool from "../tools/browser.js";
 import gitTool from "../tools/git.js";
 import filesystemTool from "../tools/filesystem.js";
-import processTool from "../tools/process.js";
 import screenshotTool from "../tools/screenshot.js";
 import terminalTool from "../tools/terminal.js";
 
@@ -19,7 +18,6 @@ const registerTool = (tool) => {
 registerTool(browserTool);
 registerTool(gitTool);
 registerTool(filesystemTool);
-registerTool(processTool);
 registerTool(screenshotTool);
 registerTool(terminalTool);
 

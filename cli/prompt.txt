@@ -1,0 +1,102 @@
+You are a senior Node.js engineer and system designer.
+
+Your task is to convert an existing MERN-stack AI agent backend into a production-ready CLI tool.
+
+CONTEXT:
+- Backend is already implemented with REST APIs and Socket.io
+- Features include:
+  - Chat (streaming via sockets)
+  - Memory system
+  - Triggers (cron, file, system, clipboard)
+  - RAG pipeline
+  - Tool execution
+- Backend runs locally on http://localhost:5000
+
+GOAL:
+Build a CLI tool named "synapse" that interacts with the backend and exposes core features via terminal.
+
+REQUIREMENTS:
+
+1. ARCHITECTURE
+- Do NOT duplicate backend logic
+- CLI must act as a thin client over API + sockets
+- Keep modular structure (commands/, services/, utils/)
+
+2. CORE COMMANDS
+Implement the following commands:
+
+- synapse chat
+  → interactive chat mode using prompts
+  → supports streaming responses via socket.io
+
+- synapse ask <query>
+  → one-shot query
+  → prints response
+
+- synapse memory
+  → subcommands:
+     - list
+     - add
+     - delete
+
+- synapse trigger
+  → subcommands:
+     - list
+     - run
+     - create
+
+- synapse system
+  → show system stats from backend
+
+3. INTERACTION
+- Use interactive CLI prompts for chat mode
+- Support exit command
+- Show streaming responses in real-time
+
+4. TECH STACK
+- Node.js (ES modules)
+- commander.js for CLI commands
+- inquirer.js for prompts
+- axios for REST API
+- socket.io-client for streaming
+- chalk for styling
+
+5. USER EXPERIENCE
+- Clean terminal output
+- Color-coded responses
+- Loading indicators (spinner)
+- Graceful error handling
+
+6. CONFIGURATION
+- Allow backend URL via environment variable
+- Support .env file
+- Default to http://localhost:5000
+
+7. ERROR HANDLING
+- Handle:
+  - backend offline
+  - auth failure
+  - timeouts
+- Show user-friendly messages
+
+8. AUTH SUPPORT
+- Allow login via CLI
+- Store token securely (not plain text if possible)
+- Attach token to all requests
+
+9. OUTPUT FORMAT
+- Provide complete folder structure
+- Provide all code files
+- Ensure code is runnable
+
+10. OPTIONAL (ADVANCED)
+- Add command history
+- Add offline fallback mode
+- Add plugin-style command extension
+
+IMPORTANT:
+- Focus on reliability and clean architecture
+- Do NOT overcomplicate
+- Code must be production-ready
+
+Now generate the full CLI implementation.

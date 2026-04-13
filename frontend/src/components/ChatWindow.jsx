@@ -2,30 +2,24 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
 import StatusRing from "./StatusRing";
-import ToolFeed from "./ToolFeed";
-import { ChevronDown, Target, Zap, Cpu, Terminal } from "lucide-react";
-// Remove Particles as it's being offloaded or replaced by the HUD design
+import { ChevronDown, Sparkles, Cpu, Zap, Terminal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 function FeatureCard({ icon: _Icon, title, desc, delay }) {
   const Icon = _Icon;
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.5, delay }}
-      className="hud-panel p-4 flex flex-col gap-2 relative bg-[rgba(10,17,32,0.8)]"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay }}
+      className="warm-card p-5 flex flex-col gap-3 warm-card-hover"
     >
-      <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#1e3a8a] opacity-50" />
-      <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#1e3a8a] opacity-50" />
-      
-      <div className="flex items-start justify-between">
-        <Icon size={18} className="text-[var(--color-cyan)]" />
-        <span className="font-mono text-[8px] tracking-widest text-slate-600">[ACTV]</span>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-surface-soft)' }}>
+        <Icon size={18} style={{ color: 'var(--color-primary)' }} />
       </div>
       <div>
-        <p className="text-[10px] font-mono font-bold text-white uppercase">{title}</p>
-        <p className="text-[9px] font-mono text-slate-400 mt-1 uppercase">{desc}</p>
+        <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{title}</p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{desc}</p>
       </div>
     </motion.div>
   );
@@ -39,7 +33,6 @@ export default function ChatWindow({
   onOpenSandbox,
   agentEvents = [],
   pendingAgentConfirmation = null,
-  showToolFeed = true,
   showStatusRing = true
 }) {
   const bottomRef = useRef(null);
@@ -73,7 +66,7 @@ export default function ChatWindow({
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const isActuallyNearBottom = scrollHeight - scrollTop - clientHeight < 200;
     if ((isWaitingReply && isActuallyNearBottom) || (isTyping && isActuallyNearBottom) || messages.length > prevMessagesLengthRef.current) {
-      const behavior = messages.length > prevMessagesLengthRef.current ? "smooth" : "instant";
+      const behavior = messages.length > prevMessagesLengthRef.current ? "smooth" : "auto";
       const timer = setTimeout(() => scrollToBottom(behavior), 10);
       prevMessagesLengthRef.current = messages.length;
       return () => clearTimeout(timer);
@@ -84,7 +77,7 @@ export default function ChatWindow({
   const hasContent = messages.length > 0;
 
   return (
-    <div className="flex flex-col h-full relative w-full overflow-hidden bg-transparent">
+    <div className="flex flex-col h-full relative w-full overflow-hidden">
       {showStatusRing && (
         <StatusRing
           isTyping={isTyping}
@@ -92,110 +85,99 @@ export default function ChatWindow({
           agentEvents={agentEvents}
         />
       )}
-      {showToolFeed && <ToolFeed events={agentEvents} />}
-      
-      {/* ── Background Tactical Grid Overlay ── */}
-      <div className="absolute inset-0 pointer-events-none bg-tactical-grid opacity-30 z-0" />
 
-      <div className="flex flex-col h-full w-full relative z-10">
-        {/* ── Header ──────────────────────── */}
-        <div className="flex items-center gap-4 px-6 py-3 border-b border-[var(--color-tactical-blue)] bg-[rgba(5,7,15,0.85)] relative">
-          <div className="absolute left-0 bottom-0 w-8 h-[2px] bg-[var(--color-neon-red)]" />
-          
-          <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 border ${isSpeaking ? 'border-[var(--color-neon-red)] bg-transparent' : 'border-[var(--color-cyan)] bg-transparent'} rounded-sm flex items-center justify-center p-0.5`}>
-               <div className={`w-full h-full ${isSpeaking ? 'bg-[var(--color-neon-red)] animate-flicker' : 'bg-[var(--color-cyan)] animate-pulse'}`} />
-            </div>
-            <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300">
-              {isSpeaking ? 'SYSTEM.BROADCASTING' : 'SECURE.CHANNEL_09'}
+      <div className="flex flex-col h-full w-full relative">
+        <div className="flex items-center gap-4 px-6 py-3" style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface)' }}>
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-2.5 h-2.5 rounded-full" 
+              style={{ 
+                background: isSpeaking ? 'var(--color-accent)' : 'var(--color-success)',
+                boxShadow: isSpeaking ? `0 0 8px var(--color-accent)` : 'none',
+                transition: 'all 0.3s ease'
+              }} 
+            />
+            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+              {isSpeaking ? 'Speaking' : 'Ready'}
             </span>
           </div>
 
-          <div className="ml-auto flex items-center gap-3 font-mono">
+          <div className="ml-auto flex items-center gap-3">
             {hasContent && (
-              <span className="text-[9px] px-2 py-1 border border-[var(--color-grid)] text-slate-400 bg-[rgba(30,58,138,0.2)]">
-                PKG_CNT: {messages.length.toString().padStart(4, '0')}
+              <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-muted)' }}>
+                {messages.length} message{messages.length !== 1 ? 's' : ''}
               </span>
             )}
             {isTyping && (
-              <span className="flex items-center gap-2 text-[9px] px-3 py-1 border border-[var(--color-neon-orange)] text-[var(--color-neon-orange)] bg-[rgba(255,144,0,0.1)]">
-                <span className="w-1.5 h-1.5 bg-[var(--color-neon-orange)] animate-flicker" />
-                AWAITING_RESPONSE...
+              <span className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-primary)' }}>
+                <motion.span
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: 'var(--color-primary)' }}
+                />
+                Thinking...
               </span>
             )}
-            <div className="h-5 w-[1px] bg-[var(--color-tactical-blue)]" />
-            <span className="text-[9px] text-[#1e3a8a] tracking-widest hidden sm:block">STATUS: ENCRYPTED</span>
           </div>
         </div>
 
-        {/* ── Message Area ─────────────────── */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto px-4 pt-8 pb-2 flex flex-col gap-1 hide-scrollbar"
+          className="flex-1 overflow-y-auto px-4 flex flex-col hide-scrollbar"
           onScroll={handleScroll}
         >
           {!hasContent && !isTyping ? (
-            /* ── Empty State ── */
-            <div className="m-auto flex flex-col items-center justify-center max-w-lg w-full gap-8 py-10 relative">
-              {/* Radar/Target Crosshair Hero */}
-              <div className="relative w-32 h-32 flex items-center justify-center pointer-events-none">
-                {/* Outer Target Circle */}
-                <div className="absolute w-full h-full border border-dashed border-[var(--color-tactical-blue)] rounded-full animate-[spin_30s_linear_infinite]" />
-                <div className="absolute w-[90%] h-[90%] border border-[rgba(0,240,255,0.2)] rounded-full" />
-                
-                {/* Crosshairs */}
-                <div className="absolute w-full h-[1px] bg-[var(--color-grid)]" />
-                <div className="absolute h-full w-[1px] bg-[var(--color-grid)]" />
-                
-                {/* Center Core */}
-                <div className="relative w-8 h-8 border border-[var(--color-neon-red)] flex items-center justify-center bg-[rgba(255,42,42,0.1)] shadow-[0_0_15px_rgba(255,42,42,0.4)]">
-                   <Target size={14} className="text-[var(--color-neon-red)]" />
+            <div className="flex-1 flex flex-col items-center justify-center w-full gap-8">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.5 }}
+                className="relative w-28 h-28 flex items-center justify-center"
+              >
+                <div className="absolute inset-0 rounded-full" style={{ background: 'var(--color-surface-soft)' }} />
+                <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center warm-card" style={{ background: 'var(--color-primary)' }}>
+                  <Sparkles size={28} className="text-white" />
                 </div>
-              </div>
+              </motion.div>
 
-              <div className="text-center font-mono">
-                <motion.h2
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="text-lg text-glow-cyan uppercase tracking-widest mb-2"
-                >
-                  SYSTEM READY
-                </motion.h2>
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-[10px] text-slate-500 tracking-[0.2em] uppercase"
-                >
-                  Awaiting directive input from terminal
-                </motion.p>
-              </div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="text-center"
+              >
+                <h2 className="text-xl font-display" style={{ color: 'var(--color-text-primary)' }}>
+                  Hello, let's chat
+                </h2>
+                <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                  I'm here to help with anything you need
+                </p>
+              </motion.div>
 
-              {/* Feature cards row */}
               <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-3">
                 <FeatureCard
                   icon={Cpu}
-                  title="Neural Core"
-                  desc="Sys_Logic Engaged"
-                  delay={0.35}
+                  title="Smart reasoning"
+                  desc="Complex analysis"
+                  delay={0.25}
                 />
                 <FeatureCard
                   icon={Zap}
-                  title="Live Data Stream"
-                  desc="Socket Conns Active"
-                  delay={0.45}
+                  title="Quick responses"
+                  desc="Instant answers"
+                  delay={0.35}
                 />
                 <FeatureCard
                   icon={Terminal}
-                  title="Code Env"
-                  desc="Sandbox Initialized"
-                  delay={0.55}
+                  title="Code help"
+                  desc="Programming assistant"
+                  delay={0.45}
                 />
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-1 w-full max-w-4xl mx-auto">
+            <div className="flex flex-col gap-4 w-full max-w-3xl mx-auto pt-8 pb-32">
               <AnimatePresence initial={false}>
                 {messages.map((msg, idx) => (
                   <MessageBubble
@@ -219,10 +201,15 @@ export default function ChatWindow({
 
               {(isWaitingReply || (isTyping && messages.length > 0 && messages[messages.length - 1]?.role !== "assistant")) && (
                 <div className="flex justify-start w-full my-4">
-                  <div className="hud-panel p-3 border-l-2 border-l-[var(--color-neon-orange)] flex items-center gap-3">
-                    <span className="w-1.5 h-1.5 bg-[var(--color-neon-orange)] animate-flicker inline-block" />
-                    <span className="font-mono text-[10px] text-[var(--color-neon-orange)] uppercase tracking-widest">
-                       Processing Data Stream...
+                  <div className="warm-card px-4 py-3 flex items-center gap-3">
+                    <motion.span
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.2, repeat: Infinity }}
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: 'var(--color-primary)' }}
+                    />
+                    <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                      Processing...
                     </span>
                   </div>
                 </div>
@@ -230,20 +217,20 @@ export default function ChatWindow({
             </div>
           )}
 
-          <div ref={bottomRef} className="h-52 shrink-0" />
+          <div ref={bottomRef} className="h-40 shrink-0" />
         </div>
 
-        {/* Scroll to bottom */}
         <AnimatePresence>
           {showScrollButton && (
             <motion.button
-              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 10 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
               onClick={() => scrollToBottom("smooth")}
-              className="absolute z-30 p-2.5 hud-panel bg-[var(--color-surface)] border-[var(--color-cyan)] text-[var(--color-cyan)] flex items-center justify-center hover:bg-[rgba(0,240,255,0.1)] transition-colors"
+              className="absolute z-30 p-2.5 rounded-full warm-card soft-shadow flex items-center justify-center hover:soft-shadow-lg transition-all"
               style={{
-                bottom: '12rem', left: '50%', transform: 'translateX(-50%)'
+                bottom: '12rem', left: '50%', transform: 'translateX(-50%)',
+                color: 'var(--color-primary)'
               }}
             >
               <ChevronDown size={18} />
@@ -251,11 +238,10 @@ export default function ChatWindow({
           )}
         </AnimatePresence>
 
-        {/* ── Input Area ───────────────────── */}
         <div
           className="absolute bottom-0 left-0 w-full px-4 pb-6 pt-12"
           style={{
-            background: 'linear-gradient(to top, var(--color-void) 0%, var(--color-void) 40%, transparent 100%)',
+            background: 'linear-gradient(to top, var(--color-background) 0%, var(--color-background) 40%, transparent 100%)',
             zIndex: 20,
           }}
         >
@@ -273,13 +259,6 @@ export default function ChatWindow({
             onOpenSandbox={onOpenSandbox}
             disabled={isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user"}
           />
-          <div className="flex w-full items-center justify-between max-w-3xl mx-auto mt-4 px-2 opacity-50">
-             <div className="w-[10%] h-[1px] bg-[var(--color-tactical-blue)]" />
-             <div className="text-center font-mono text-[8px] tracking-[0.3em] text-[var(--color-cyan)] uppercase">
-               SYSTEM // LOCAL_HOST:5173 // SYNAPSE_HUD_V2
-             </div>
-             <div className="w-[10%] h-[1px] bg-[var(--color-tactical-blue)]" />
-          </div>
         </div>
       </div>
     </div>

@@ -10,14 +10,12 @@ import {
   processStandardChatTurn
 } from "../../services/chatPipeline.js";
 import { cleanupClient } from "../index.js";
-import { validateUserId } from "../../middleware/auth.js";
 
 export const chatEvents = (io, socket, activeStreams) => {
   socket.on("chat:message", async (data) => {
     cleanupClient(socket.id, activeStreams);
 
     const {
-      userId,
       chatId,
       message: rawMessage = "",
       voice,
@@ -31,12 +29,9 @@ export const chatEvents = (io, socket, activeStreams) => {
     const abortController = new AbortController();
     activeStreams.set(socket.id, abortController);
     const safeCleanup = () => cleanupClient(socket.id, activeStreams);
+    const userId = socket.auth.userId;
 
     try {
-      if (!validateUserId(userId)) {
-        throw new Error("Invalid userId");
-      }
-
       const { chat, chatId: currentChatId } = await getOrCreateChatSession({
         userId,
         chatId,
@@ -118,9 +113,10 @@ export const chatEvents = (io, socket, activeStreams) => {
     socket.emit("chat:stopped");
   });
 
-  socket.on("chat:feedback", async ({ userId, chatId, messageId, feedback }) => {
+  socket.on("chat:feedback", async ({ chatId, messageId, feedback }) => {
     try {
-      if (!userId || !chatId || !messageId) {
+      const userId = socket.auth.userId;
+      if (!chatId || !messageId) {
         return socket.emit("chat:error", { message: "Missing required fields" });
       }
       const chat = await Chat.findOne({ _id: chatId, userId });

@@ -60,6 +60,14 @@ export const decompose = async ({ message = "" } = {}) => {
     return buildSingleTaskPlan("process", { action: "status" }, trimmed, "Inspecting local memory usage");
   }
 
+  if (/\b(system status|machine status|system health|show system status|show machine status)\b/i.test(trimmed)) {
+    return buildSingleTaskPlan("filesystem", { action: "list", path: "." }, trimmed, "Listing current directory");
+  }
+
+  if (/\b(memory usage|ram usage|how much memory|system memory)\b/i.test(trimmed)) {
+    return buildSingleTaskPlan("filesystem", { action: "list", path: "." }, trimmed, "Listing current directory");
+  }
+
   if (/\b(take (a )?screenshot|capture (the )?screen|screen capture|snapshot my screen)\b/i.test(trimmed)) {
     return buildSingleTaskPlan("screenshot", {}, trimmed, "Preparing secure screen capture");
   }

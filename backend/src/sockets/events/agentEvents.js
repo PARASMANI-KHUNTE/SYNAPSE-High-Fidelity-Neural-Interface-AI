@@ -21,10 +21,10 @@ export const agentEvents = (io, socket) => {
     const {
       tool,
       params = {},
-      userId = "",
       sessionId = "",
       confirmationToken = ""
     } = payload;
+    const userId = socket.auth.userId;
 
     const runId = randomUUID();
     socket.emit("agent:thinking", {

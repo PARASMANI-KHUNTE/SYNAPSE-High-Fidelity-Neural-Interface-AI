@@ -4,10 +4,14 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
+import { promisify } from "util";
+import config from "../config/env.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-const EXECUTION_TIMEOUT = 15000;
+const execFileAsync = promisify(execFile);
+const EXECUTION_TIMEOUT = config.sandbox.timeoutMs;
 const MAX_OUTPUT_SIZE = 512 * 1024;
 const MAX_CODE_LENGTH = 50000;
 
@@ -144,7 +148,10 @@ const getLanguageConfig = (language) => {
   return configs[key] || null;
 };
 
-const runSandboxFile = ({ command, filepath, options = {} }) =>
+const IS_PRODUCTION = config.app.nodeEnv === "production";
+const ENFORCE_DOCKER = config.sandbox.enabled && IS_PRODUCTION;
+
+const runSandboxFileLocally = ({ command, filepath, options = {} }) =>
   new Promise((resolve, reject) => {
     let timedOut = false;
 
@@ -182,7 +189,63 @@ const runSandboxFile = ({ command, filepath, options = {} }) =>
     proc.on("error", (err) => reject(err));
   });
 
-router.post("/", async (req, res) => {
+const runSandboxInDocker = async ({ filepath, requestId }) => {
+  const seccompArgs =
+    config.sandbox.seccompProfile && config.sandbox.seccompProfile !== "default"
+      ? ["--security-opt", `seccomp=${config.sandbox.seccompProfile}`]
+      : [];
+
+  const dockerArgs = [
+    "run",
+    "--rm",
+    "--network",
+    "none",
+    "--read-only",
+    "--pids-limit",
+    String(config.sandbox.pidsLimit),
+    "--cpus",
+    String(config.sandbox.cpuLimit),
+    "--memory",
+    config.sandbox.memoryLimit,
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=16m",
+    ...seccompArgs,
+    "-v",
+    `${filepath}:/sandbox/main.js:ro`,
+    config.sandbox.dockerImage,
+    "node",
+    "/sandbox/main.js"
+  ];
+
+  try {
+    const { stdout, stderr } = await execFileAsync("docker", dockerArgs, {
+      timeout: EXECUTION_TIMEOUT,
+      maxBuffer: MAX_OUTPUT_SIZE,
+      windowsHide: true
+    });
+    return {
+      stdout: stdout || "",
+      stderr: stderr || "",
+      timedOut: false,
+      mode: "docker"
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("Docker not installed or not available in PATH");
+    }
+    if (error.killed || /timed out/i.test(error.message)) {
+      return {
+        stdout: error.stdout || "",
+        stderr: error.stderr || "",
+        timedOut: true,
+        mode: "docker"
+      };
+    }
+    throw new Error(`Sandbox docker execution failed (${requestId}): ${error.stderr || error.message}`);
+  }
+};
+
+router.post("/", requireAuth, async (req, res) => {
   const requestId = crypto.randomBytes(4).toString("hex");
   let filepath = "";
 
@@ -204,8 +267,9 @@ router.post("/", async (req, res) => {
     const langConfig = getLanguageConfig(language);
     if (!langConfig) {
       return res.status(400).json({
-        error: "Only JavaScript is allowed and supported for execution",
-        supported: ["javascript", "js", "node"]
+        error: "Sandbox only supports JavaScript execution",
+        supported: ["javascript", "js", "node"],
+        note: "Python execution is not available in this sandbox environment"
       });
     }
 
@@ -220,11 +284,13 @@ router.post("/", async (req, res) => {
 
     console.log(`[Sandbox:${requestId}] Executing ${language} with ${langConfig.command}`);
 
-    const result = await runSandboxFile({
-      command: langConfig.command,
-      filepath,
-      options: { env: { PATH: process.env.SYSTEMROOT || "" } }
-    });
+    const result = config.sandbox.enabled
+      ? await runSandboxInDocker({ filepath, requestId })
+      : await runSandboxFileLocally({
+        command: langConfig.command,
+        filepath,
+        options: { env: { PATH: process.env.SYSTEMROOT || "" } }
+      });
 
     const output = result.stdout.length > MAX_OUTPUT_SIZE
       ? `${result.stdout.substring(0, MAX_OUTPUT_SIZE)}\n... (output truncated)`
@@ -234,11 +300,12 @@ router.post("/", async (req, res) => {
       output,
       error: result.stderr || null,
       timedOut: result.timedOut,
-      requestId
+      requestId,
+      mode: result.mode || "local"
     });
   } catch (err) {
-    console.error(`[Sandbox:${requestId}] Error:`, err.message);
-    return res.status(500).json({ error: err.message || "Sandbox execution failed" });
+    console.error(`[Sandbox:${requestId}] Error:`, err);
+    return res.status(500).json({ error: "Sandbox execution failed" });
   } finally {
     if (filepath) {
       fs.unlink(filepath, () => {});
@@ -249,7 +316,12 @@ router.post("/", async (req, res) => {
 router.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    supported: ["javascript"],
+    language: "javascript",
+    sandbox: {
+      enabled: config.sandbox.enabled,
+      enforceDocker: ENFORCE_DOCKER,
+      dockerImage: config.sandbox.dockerImage
+    },
     timestamp: new Date().toISOString()
   });
 });

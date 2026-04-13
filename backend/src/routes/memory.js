@@ -1,13 +1,13 @@
 import express from "express";
-import { userIdValidator } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
 import { getProfileMemory } from "../memory/profileMemory.js";
 import { getRelevantEpisodes } from "../memory/episodicMemory.js";
 
 const router = express.Router();
 
-router.get("/profile", userIdValidator, async (req, res) => {
+router.get("/profile", requireAuth, async (req, res) => {
   try {
-    const userId = req.query.userId;
+    const userId = req.auth.userId;
     const { profile, facts } = await getProfileMemory({ userId, limit: 8 });
     const episodes = await getRelevantEpisodes({ userId, query: "", limit: 3 });
 
@@ -35,7 +35,8 @@ router.get("/profile", userIdValidator, async (req, res) => {
       }))
     });
   } catch (err) {
-    res.status(500).json({ error: "Failed to load memory profile", details: err.message });
+    console.error("Memory profile error:", err);
+    res.status(500).json({ error: "Failed to load memory profile" });
   }
 });
 

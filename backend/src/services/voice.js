@@ -1,6 +1,7 @@
 import { exec, execFile } from "child_process";
 import path from "path";
 import fs from "fs";
+import config from "../config/env.js";
 
 const runExec = (command, options = {}) =>
   new Promise((resolve, reject) => {
@@ -33,16 +34,17 @@ const ensureUploadsDir = () => {
 };
 
 const scheduleCleanup = (outputPath, filename) => {
+  const ttlMs = config.tts.fileTtlMs || 300000;
   setTimeout(() => {
     fs.unlink(outputPath, (err) => {
       if (err && err.code !== "ENOENT") {
         console.warn(`[Cleanup] Failed to delete TTS file ${filename}:`, err.message);
       }
     });
-  }, 60_000);
+  }, ttlMs);
 };
 
-const getBaseUrl = () => process.env.BASE_URL || "http://localhost:3001";
+const getBaseUrl = () => config.app.baseUrl || process.env.BASE_URL || "http://localhost:3001";
 
 const sanitizeForSpeech = (text, limit = 2000) =>
   String(text || "")
@@ -56,7 +58,44 @@ const sanitizeForSpeech = (text, limit = 2000) =>
     .trim()
     .substring(0, limit);
 
+const convertHindiGenderPhrasing = (text, voicePref = "male") => {
+  const value = String(text || "");
+  const normalizedVoice = String(voicePref || "male").toLowerCase();
+  const isFemale = normalizedVoice === "female";
+
+  if (isFemale) {
+    return value
+      .replace(/\bmain\s+kar\s+sakta\s+hoon\b/gi, "main kar sakti hoon")
+      .replace(/\bmain\s+samajh\s+sakta\s+hoon\b/gi, "main samajh sakti hoon")
+      .replace(/\bmain\s+bata\s+sakta\s+hoon\b/gi, "main bata sakti hoon")
+      .replace(/\bmain\s+madad\s+kar\s+sakta\s+hoon\b/gi, "main madad kar sakti hoon")
+      .replace(/\bmain\s+taiyar\s+hoon\b/gi, "main taiyar hoon");
+  }
+
+  return value
+    .replace(/\bmain\s+kar\s+sakti\s+hoon\b/gi, "main kar sakta hoon")
+    .replace(/\bmain\s+samajh\s+sakti\s+hoon\b/gi, "main samajh sakta hoon")
+    .replace(/\bmain\s+bata\s+sakti\s+hoon\b/gi, "main bata sakta hoon")
+    .replace(/\bmain\s+madad\s+kar\s+sakti\s+hoon\b/gi, "main madad kar sakta hoon");
+};
+
+const humanizeForSpeech = (text, voicePref = "male") => {
+  const genderAdjusted = convertHindiGenderPhrasing(text, voicePref);
+  const value = sanitizeForSpeech(genderAdjusted, 3000);
+  return value
+    .replace(/\b([A-Z]{2,})\b/g, "$1.")
+    .replace(/([a-z])\.([A-Z])/g, "$1. $2")
+    .replace(/\s*([,;:])\s*/g, "$1 ")
+    .replace(/\s*([.!?])\s*/g, "$1 ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const detectLanguageProfile = (text) => {
+  if (config.tts.accent === "hi-in") return "hi";
+  if (config.tts.accent === "en-in") return "en_in";
+  if (config.tts.accent === "en-us") return "default";
+
   const content = String(text || "");
   const devanagariChars = (content.match(/[\u0900-\u097F]/g) || []).length;
   const latinChars = (content.match(/[A-Za-z]/g) || []).length;
@@ -87,7 +126,7 @@ const generateScriptTTS = async (text, outputPath, voicePref, engine) => {
     throw new Error(`TTS script not found: ${script}`);
   }
 
-  const cleanText = sanitizeForSpeech(text, engine === "qwen" ? 2000 : 3000);
+  const cleanText = humanizeForSpeech(text, voicePref).substring(0, engine === "qwen" ? 2000 : 3000);
   const languageProfile = detectLanguageProfile(cleanText);
   console.log(`[TTS] ${engine} | voice=${voicePref} | chars=${cleanText.length}`);
 
@@ -193,12 +232,12 @@ export const generateTTS = async (text, voicePref = "male") => {
 
   ensureUploadsDir();
 
-  const preferredEngine = process.env.TTS_ENGINE || (process.platform === "win32" ? "edge" : "qwen");
+  const preferredEngine = config.tts.engine || process.env.TTS_ENGINE || (process.platform === "win32" ? "edge" : "qwen");
   const attempts = preferredEngine === "native"
     ? ["native", "edge", "qwen"]
     : preferredEngine === "qwen"
-      ? ["qwen", "edge", "native"]
-      : ["edge", "qwen", "native"];
+      ? ["qwen", "edge"]
+      : ["edge", "qwen"];
 
   for (const engine of attempts) {
     const ext = engine === "edge" ? "mp3" : "wav";

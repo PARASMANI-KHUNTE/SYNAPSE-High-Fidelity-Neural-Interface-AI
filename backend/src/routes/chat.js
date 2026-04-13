@@ -4,16 +4,17 @@ import { getRelevantDocs } from "../rag/retriever.js";
 import { generateResponse } from "../services/llm.js";
 import { buildChatMessages } from "../services/chatContext.js";
 import { classifyQuery, resolveModelPreference } from "../services/chatRouter.js";
-import { userIdValidator } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.post("/", userIdValidator, async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   try {
-    const { userId, chatId, message, modelPreference, customModel } = req.body;
+    const { chatId, message, modelPreference, customModel, voice } = req.body;
+    const userId = req.auth.userId;
 
-    if (!userId || !message) {
-      return res.status(400).json({ error: "Missing 'userId' or 'message' in request body" });
+    if (!message) {
+      return res.status(400).json({ error: "Missing 'message' in request body" });
     }
 
     let chat = null;
@@ -58,7 +59,8 @@ router.post("/", userIdValidator, async (req, res) => {
       userMessage: message,
       operatorName: process.env.OPERATOR_NAME || "Operator",
       ragContext,
-      queryType
+      queryType,
+      voiceGender: voice || "male"
     });
 
     const reply = await generateResponse(messages, selectedModel);

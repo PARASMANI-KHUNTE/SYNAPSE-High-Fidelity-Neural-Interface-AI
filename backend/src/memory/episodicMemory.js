@@ -54,9 +54,13 @@ const safeJsonParse = (text = "") => {
   const trimmed = String(text || "").trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("No JSON object found in summarizer response");
+    return null;
   }
-  return JSON.parse(jsonMatch[0]);
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    return null;
+  }
 };
 
 const normalizeSummaryPayload = (payload, fallback) => ({
@@ -164,7 +168,7 @@ export const refreshEpisodeSummaryInBackground = async ({ episodeId, messages = 
       ]);
 
       const parsed = safeJsonParse(response);
-      const normalized = normalizeSummaryPayload(parsed, fallback);
+      const normalized = normalizeSummaryPayload(parsed || fallback, fallback);
 
       await MemoryEpisode.findByIdAndUpdate(episodeId, {
         $set: normalized

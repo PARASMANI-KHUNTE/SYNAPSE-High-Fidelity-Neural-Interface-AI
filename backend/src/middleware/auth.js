@@ -1,26 +1,46 @@
-const SAFE_USERID_PATTERN = /^user-[a-zA-Z0-9_-]+$/;
+import { verifyAccessToken } from "../services/tokenService.js";
 
-export const userIdValidator = (req, res, next) => {
-  const userId = req.body?.userId || req.query?.userId;
-  
-  if (!userId) {
-    return res.status(401).json({ error: "Missing userId" });
-  }
-
-  if (typeof userId !== "string" || userId.length < 5 || userId.length > 100) {
-    return res.status(400).json({ error: "Invalid userId format" });
-  }
-
-  if (!SAFE_USERID_PATTERN.test(userId)) {
-    return res.status(400).json({ error: "Invalid userId format" });
-  }
-
-  next();
+const getBearerToken = (header = "") => {
+  if (!header || typeof header !== "string") return "";
+  const [scheme, token] = header.split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) return "";
+  return token.trim();
 };
 
-export const validateUserId = (userId) => {
-  if (!userId || typeof userId !== "string") return false;
-  if (userId.length < 5 || userId.length > 100) return false;
-  if (!SAFE_USERID_PATTERN.test(userId)) return false;
-  return true;
+export const requireAuth = (req, res, next) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) {
+      return res.status(401).json({ error: "Missing bearer token" });
+    }
+
+    const payload = verifyAccessToken(token);
+    req.auth = {
+      userId: String(payload.sub),
+      email: payload.email || "",
+      role: payload.role || "user"
+    };
+    return next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+};
+
+export const requireSocketAuth = (socket, next) => {
+  try {
+    const authHeader = socket.handshake.auth?.token || socket.handshake.headers?.authorization || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+    if (!token) {
+      return next(new Error("Unauthorized"));
+    }
+    const payload = verifyAccessToken(token);
+    socket.auth = {
+      userId: String(payload.sub),
+      email: payload.email || "",
+      role: payload.role || "user"
+    };
+    return next();
+  } catch {
+    return next(new Error("Unauthorized"));
+  }
 };

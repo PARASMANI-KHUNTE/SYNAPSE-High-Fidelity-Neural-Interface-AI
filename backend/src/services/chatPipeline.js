@@ -14,6 +14,7 @@ import { upsertEpisodeFromChat } from "../memory/episodicMemory.js";
 import { rememberFacts, syncProfileFacts } from "../memory/profileMemory.js";
 import { queryMemoryContext } from "../memory/memoryRouter.js";
 import { classifyQuery, shouldUseRAG, resolveModelPreference } from "./chatRouter.js";
+import config from "../config/env.js";
 
 const SEARCH_HINT_PATTERNS = [
   /\bsearch\b/i, /\blatest\b/i, /\btoday\b/i, /\bcurrent\b/i, /\bnews\b/i, /\bnow\b/i,
@@ -100,6 +101,9 @@ const resolveUploadedFilePath = (fileUrl) => {
 };
 
 const fileExists = (filepath) => Boolean(filepath && fs.existsSync(filepath));
+const STREAM_TTS_MIN_CHARS_INITIAL = 30;
+const STREAM_TTS_MIN_CHARS = 65;
+const STREAM_TTS_MAX_BUFFER = 420;
 
 const imageUrlToBase64 = (imageUrl) => {
   const filepath = resolveUploadedFilePath(imageUrl);
@@ -115,6 +119,77 @@ const localImagePathToBase64 = (localPath) => {
   }
 
   return fs.readFileSync(localPath).toString("base64");
+};
+
+const extractSpeakableSegments = (buffer = "", minChars = STREAM_TTS_MIN_CHARS) => {
+  const segments = [];
+  let remaining = String(buffer || "");
+
+  while (true) {
+    const match = remaining.match(/[\s\S]*?(?:[.!?]+(?:\s|$)|\n{2,})/);
+    if (!match) break;
+    const segment = match[0].replace(/\s+/g, " ").trim();
+    remaining = remaining.slice(match[0].length);
+    if (segment.length >= minChars) {
+      segments.push(segment);
+    }
+  }
+
+  if (remaining.length > STREAM_TTS_MAX_BUFFER) {
+    const fallback = remaining.slice(0, STREAM_TTS_MAX_BUFFER).trim();
+    remaining = remaining.slice(STREAM_TTS_MAX_BUFFER);
+    if (fallback.length >= STREAM_TTS_MIN_CHARS) {
+      segments.push(fallback);
+    }
+  }
+
+  return { segments, remaining };
+};
+
+const createStreamingTts = ({ socket, voice, abortSignal }) => {
+  let buffer = "";
+  let queue = Promise.resolve();
+  let emittedAny = false;
+  let queuedAny = false;
+
+  const enqueue = (text) => {
+    queue = queue
+      .then(async () => {
+        if (abortSignal?.aborted) return;
+        const audioUrl = await generateTTS(text, voice);
+        if (audioUrl) {
+          emittedAny = true;
+          socket.emit("audio:ready", { url: audioUrl });
+        }
+      })
+      .catch((err) => {
+        console.warn("Streaming TTS chunk failed:", err.message);
+      });
+    queuedAny = true;
+  };
+
+  return {
+    onChunk(chunk = "") {
+      if (abortSignal?.aborted) return;
+      buffer += chunk;
+      const minChars = queuedAny ? STREAM_TTS_MIN_CHARS : STREAM_TTS_MIN_CHARS_INITIAL;
+      const { segments, remaining } = extractSpeakableSegments(buffer, minChars);
+      buffer = remaining;
+      for (const segment of segments) {
+        enqueue(segment);
+      }
+    },
+    async flush() {
+      if (!abortSignal?.aborted) {
+        const tail = buffer.replace(/\s+/g, " ").trim();
+        if (tail.length >= 18) {
+          enqueue(tail);
+        }
+      }
+      await queue;
+      return emittedAny;
+    }
+  };
 };
 
 const buildImagePayload = (imageUrls = []) =>
@@ -172,6 +247,12 @@ export const getOrCreateChatSession = async ({ userId, chatId, title = "New Chat
     socket.emit("chat:created", { chatId: currentChatId, title: chat.title });
   } else {
     chat = await Chat.findOne({ _id: currentChatId, userId });
+    if (!chat) {
+      chat = new Chat({ userId, title, messages: [] });
+      await chat.save();
+      currentChatId = chat._id;
+      socket.emit("chat:created", { chatId: currentChatId, title: chat.title });
+    }
   }
 
   if (!chat) {
@@ -371,7 +452,8 @@ export const processAgentChatTurn = async ({
         images: [screenshotBase64]
       },
       operatorName: process.env.OPERATOR_NAME || "Operator",
-      queryType: "KNOWLEDGE"
+      queryType: "KNOWLEDGE",
+      voiceGender: voice || "male"
     });
     const visionModel = resolveModelPreference({
       preference: modelPreference,
@@ -492,20 +574,30 @@ export const processStandardChatTurn = async ({
     ragContext,
     searchContext,
     attachmentContext,
-    queryType
+    queryType,
+    voiceGender: voice || "male"
   });
 
   socket.emit("chat:reply:start");
   socket.emit("chat:model", { preference: modelPreference || "auto", model: selectedModel, queryType });
 
+  const streamingTts = config.tts.enabled ? createStreamingTts({
+    socket,
+    voice,
+    abortSignal
+  }) : null;
+
   let fullReply = await generateResponseStream(
     llmMessages,
     (chunk) => {
       socket.emit("chat:reply:chunk", { chunk });
+      streamingTts?.onChunk(chunk);
     },
     abortSignal,
     selectedModel
   );
+
+  const streamedAudio = streamingTts ? await streamingTts.flush() : false;
 
   if (fullReply.trim()) {
     chat.addMessage("assistant", fullReply);
@@ -561,7 +653,7 @@ export const processStandardChatTurn = async ({
     }
   }
 
-  if (process.env.ENABLE_TTS === "true") {
+  if (config.tts.enabled && !streamedAudio) {
     const audioUrl = await generateTTS(fullReply, voice);
     if (audioUrl) {
       socket.emit("audio:ready", { url: audioUrl });

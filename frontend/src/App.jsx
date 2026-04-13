@@ -3,21 +3,19 @@ import { io } from "socket.io-client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import SandboxPanel from "./components/SandboxPanel";
-import ThreeBackground from "./components/ThreeBackground";
-import AvatarCanvas from "./components/AvatarCanvas";
 import AgentDebugPanel from "./components/AgentDebugPanel";
 import MemoryPanel from "./components/MemoryPanel";
-import SystemPanel from "./components/SystemPanel";
-import TriggerPanel from "./components/TriggerPanel";
-import ToolFeed from "./components/ToolFeed";
- 
+  
 import { motion, AnimatePresence } from "framer-motion";
-import { WifiOff, Wifi, Loader2 } from "lucide-react";
+import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff } from "lucide-react";
 import "./App.css";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+const ACCESS_TOKEN_KEY = "synapse_access_token";
+const REFRESH_TOKEN_KEY = "synapse_refresh_token";
+const STREAM_CHUNK_FLUSH_MS = 40;
 
 /* ── Error Boundary ─────────────────────────── */
 class ErrorBoundary extends Component {
@@ -39,28 +37,27 @@ class ErrorBoundary extends Component {
       return (
         <div
           className="flex items-center justify-center h-screen"
-          style={{ background: '#0d0a1a', color: '#f1e9ff', fontFamily: 'Space Grotesk, sans-serif' }}
+          style={{ background: 'var(--color-background)', color: 'var(--color-text-primary)' }}
         >
-          <div className="text-center p-8 max-w-sm">
+          <div className="text-center p-8 max-w-sm warm-card soft-shadow-lg">
             <div
-              className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6"
+              className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
               style={{
-                background: 'rgba(244,63,94,0.12)',
-                border: '1px solid rgba(244,63,94,0.3)',
+                background: 'var(--color-error)15',
+                border: '1px solid var(--color-error)30',
               }}
             >
-              <WifiOff size={28} style={{ color: '#f43f5e' }} />
+              <WifiOff size={28} style={{ color: 'var(--color-error)' }} />
             </div>
-            <h1 className="text-xl font-bold mb-2" style={{ color: '#f1e9ff' }}>Something went wrong</h1>
-            <p className="text-sm mb-6" style={{ color: '#6b5f8a' }}>Please refresh the page to continue</p>
+            <h1 className="text-xl font-display font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Something went wrong</h1>
+            <p className="text-sm mb-6" style={{ color: 'var(--color-text-muted)' }}>Please refresh the page to continue</p>
             <button
               onClick={() => window.location.reload()}
-              className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+              className="px-6 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-95"
               style={{
-                background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
-                color: '#f1e9ff',
+                background: 'var(--color-primary)',
+                color: 'white',
                 border: 'none',
-                boxShadow: '0 0 20px rgba(168,85,247,0.4)',
               }}
             >
               Reload Page
@@ -85,40 +82,31 @@ function ConnectionToast({ isConnected, connectionError }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -12, scale: 0.95 }}
           transition={{ type: 'spring', damping: 22, stiffness: 300 }}
-          className="fixed top-4 right-4 z-[100] flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-sm font-medium"
+          className="fixed top-4 right-4 z-[100] flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium warm-card soft-shadow"
           style={connectionError ? {
-            background: 'rgba(22,17,46,0.9)',
-            border: '1px solid rgba(244,63,94,0.3)',
-            color: '#fb7185',
-            backdropFilter: 'blur(16px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            border: '1px solid var(--color-error)30',
+            color: 'var(--color-error)',
           } : !isConnected ? {
-            background: 'rgba(22,17,46,0.9)',
-            border: '1px solid rgba(168,85,247,0.25)',
-            color: '#b8a8d8',
-            backdropFilter: 'blur(16px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            border: '1px solid var(--color-primary)30',
+            color: 'var(--color-primary)',
           } : {
-            background: 'rgba(22,17,46,0.9)',
-            border: '1px solid rgba(74,222,128,0.3)',
-            color: '#4ade80',
-            backdropFilter: 'blur(16px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            border: '1px solid var(--color-success)30',
+            color: 'var(--color-success)',
           }}
         >
           {connectionError ? (
             <>
-              <WifiOff size={14} style={{ color: '#fb7185' }} />
+              <WifiOff size={14} style={{ color: 'var(--color-error)' }} />
               <span>Connection lost</span>
             </>
           ) : !isConnected ? (
             <>
-              <Loader2 size={14} className="animate-spin" style={{ color: '#a855f7' }} />
+              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
               <span>Connecting...</span>
             </>
           ) : (
             <>
-              <Wifi size={14} style={{ color: '#4ade80' }} />
+              <Wifi size={14} style={{ color: 'var(--color-success)' }} />
               <span>Connected</span>
             </>
           )}
@@ -138,19 +126,13 @@ function App() {
       const saved = JSON.parse(localStorage.getItem("synapse_panel_prefs") || "{}");
       return {
         memory: saved.memory !== false,
-        triggers: saved.triggers !== false,
-        system: saved.system !== false,
         console: saved.console !== false,
-        toolFeed: saved.toolFeed !== false,
         statusRing: saved.statusRing !== false
       };
     } catch {
       return {
         memory: true,
-        triggers: true,
-        system: true,
         console: true,
-        toolFeed: true,
         statusRing: true
       };
     }
@@ -177,20 +159,18 @@ function App() {
   const [memoryFacts, setMemoryFacts] = useState([]);
   const [memoryProfile, setMemoryProfile] = useState(null);
   const [memoryEpisodes, setMemoryEpisodes] = useState([]);
-  const [systemStatus, setSystemStatus] = useState(null);
-  const [triggers, setTriggers] = useState([]);
-  const [triggerAlerts, setTriggerAlerts] = useState([]);
-  const [updatingTriggerId, setUpdatingTriggerId] = useState("");
-  const [isCreatingTrigger, setIsCreatingTrigger] = useState(false);
-  const hasRightDockPanels = panelPrefs.memory || panelPrefs.triggers || panelPrefs.system || panelPrefs.console;
+  const hasRightDockPanels = panelPrefs.memory || panelPrefs.console;
 
-  const [userId] = useState(() => {
-    const saved = localStorage.getItem("chat_user_id");
-    if (saved) return saved;
-    const newId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem("chat_user_id", newId);
-    return newId;
-  });
+  const [accessToken, setAccessToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) || "");
+  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem(REFRESH_TOKEN_KEY) || "");
+  const [authUser, setAuthUser] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const socketRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
@@ -203,14 +183,29 @@ function App() {
   const playNextFnRef = useRef(null);
   const scheduleReconnectFnRef = useRef(null);
   const setupListenersFnRef = useRef(null);
-  const userIdRef = useRef(userId);
+  const userIdRef = useRef("");
+  const accessTokenRef = useRef(accessToken);
   const activeChatIdRef = useRef(activeChatId);
+  const assistantMessageIdRef = useRef(null);
+  const pendingAssistantChunkRef = useRef("");
+  const chunkFlushTimerRef = useRef(null);
 
-  useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { userIdRef.current = authUser?.id || ""; }, [authUser]);
+  useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
   useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   useEffect(() => { localStorage.setItem("chat_model_preference", modelPreference); }, [modelPreference]);
   useEffect(() => { localStorage.setItem("synapse_panel_prefs", JSON.stringify(panelPrefs)); }, [panelPrefs]);
   useEffect(() => { localStorage.setItem("synapse_layout_preset", activeLayoutPreset); }, [activeLayoutPreset]);
+
+  const normalizeMediaUrl = useCallback((value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith("//")) return `http:${raw}`;
+    if (raw.startsWith("/")) return `${SOCKET_URL}${raw}`;
+    const clean = raw.replace(/^\.?\//, "");
+    return `${SOCKET_URL}/${clean}`;
+  }, []);
 
   const pushAgentEvent = useCallback((type, payload) => {
     setAgentEvents((prev) => {
@@ -226,9 +221,12 @@ function App() {
     });
   }, []);
 
+  const authHeaders = useCallback(() => (
+    accessTokenRef.current ? { Authorization: `Bearer ${accessTokenRef.current}` } : {}
+  ), []);
+
   const fetchMemoryProfile = useCallback(() => {
-    const query = new URLSearchParams({ userId }).toString();
-    fetch(`${SOCKET_URL}/api/memory/profile?${query}`)
+    fetch(`${SOCKET_URL}/api/memory/profile`, { headers: authHeaders() })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load memory");
@@ -241,48 +239,7 @@ function App() {
         setMemoryEpisodes(data.episodes || []);
       })
       .catch(() => {});
-  }, [userId]);
-
-  const fetchTriggers = useCallback(() => {
-    fetch(`${SOCKET_URL}/api/triggers`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load triggers");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setTriggers(data.triggers || []);
-      })
-      .catch(() => {});
-  }, []);
-
-  const pushTriggerAlert = useCallback((payload) => {
-    setTriggerAlerts((prev) => {
-      const next = [
-        {
-          id: payload?.id || `trigger_${Date.now()}`,
-          ...payload
-        },
-        ...prev
-      ];
-      return next.slice(0, 5);
-    });
-  }, []);
-
-  const fetchSystemStatus = useCallback(() => {
-    fetch(`${SOCKET_URL}/api/system`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load system status");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setSystemStatus(data);
-      })
-      .catch(() => {});
-  }, []);
+  }, [authHeaders]);
 
   const clearAudioQueue = useCallback(() => {
     audioQueueRef.current = [];
@@ -292,6 +249,41 @@ function App() {
     }
     isSpeakingRef.current = false;
     setIsSpeaking(false);
+  }, []);
+
+  const flushAssistantChunks = useCallback(() => {
+    const buffered = pendingAssistantChunkRef.current;
+    if (!buffered) {
+      chunkFlushTimerRef.current = null;
+      return;
+    }
+
+    pendingAssistantChunkRef.current = "";
+    chunkFlushTimerRef.current = null;
+    const activeAssistantId = assistantMessageIdRef.current;
+
+    setMessages((prev) => {
+      if (!prev.length) return prev;
+      const arr = [...prev];
+      let targetIndex = -1;
+
+      if (activeAssistantId) {
+        targetIndex = arr.findIndex((item) => item.id === activeAssistantId);
+      }
+      if (targetIndex < 0) {
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].role === "assistant") {
+            targetIndex = i;
+            break;
+          }
+        }
+      }
+      if (targetIndex < 0) return prev;
+
+      const target = arr[targetIndex];
+      arr[targetIndex] = { ...target, content: `${target.content || ""}${buffered}` };
+      return arr;
+    });
   }, []);
 
   const playNext = useCallback(() => {
@@ -305,13 +297,18 @@ function App() {
     setIsSpeaking(true);
     const audio = audioQueueRef.current.shift();
     audioRef.current = audio;
-    audio.onended = () => { if (mountedRef.current && playNextFnRef.current) playNextFnRef.current(); };
-    audio.onerror  = () => { if (mountedRef.current && playNextFnRef.current) playNextFnRef.current(); };
+    const proceed = () => {
+      if (mountedRef.current && playNextFnRef.current) {
+        setTimeout(() => playNextFnRef.current(), 20);
+      }
+    };
+    audio.onended = proceed;
+    audio.onerror = proceed;
+    audio.playbackRate = 1.0;
     const p = audio.play();
-    if (p !== undefined) p.catch(() => { if (mountedRef.current && playNextFnRef.current) playNextFnRef.current(); });
+    if (p !== undefined) p.catch(proceed);
   }, []);
 
-  // eslint-disable-next-line react-hooks/refs
   playNextFnRef.current = playNext;
 
   const scheduleReconnect = useCallback(() => {
@@ -324,17 +321,86 @@ function App() {
     const delay = RECONNECT_DELAY * reconnectAttemptsRef.current;
     reconnectTimeoutRef.current = setTimeout(() => {
       if (mountedRef.current && !socketRef.current?.connected) {
-        const newSocket = io(SOCKET_URL, { reconnection: false, timeout: 10000 });
+        const token = accessTokenRef.current ? `Bearer ${accessTokenRef.current}` : "";
+        const newSocket = io(SOCKET_URL, {
+          reconnection: false,
+          timeout: 10000,
+          auth: { token }
+        });
         socketRef.current = newSocket;
         if (setupListenersFnRef.current) setupListenersFnRef.current(newSocket);
       }
     }, delay);
   }, []);
 
-  // eslint-disable-next-line react-hooks/refs
   scheduleReconnectFnRef.current = scheduleReconnect;
 
+  const setSessionTokens = useCallback((nextAccess, nextRefresh) => {
+    setAccessToken(nextAccess || "");
+    setRefreshToken(nextRefresh || "");
+    if (nextAccess) localStorage.setItem(ACCESS_TOKEN_KEY, nextAccess);
+    else localStorage.removeItem(ACCESS_TOKEN_KEY);
+    if (nextRefresh) localStorage.setItem(REFRESH_TOKEN_KEY, nextRefresh);
+    else localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }, []);
+
+  const loadCurrentUser = useCallback((token) => {
+    if (!token) return Promise.resolve();
+    return fetch(`${SOCKET_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Unauthorized"))))
+      .then((data) => setAuthUser(data.user || null))
+      .catch(() => {
+        setAuthUser(null);
+      });
+  }, []);
+
+  const tryRefreshSession = useCallback(async () => {
+    if (!refreshToken) return false;
+    try {
+      const res = await fetch(`${SOCKET_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken })
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      setSessionTokens(data.accessToken, data.refreshToken);
+      await loadCurrentUser(data.accessToken);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refreshToken, setSessionTokens, loadCurrentUser]);
+
+  const clearAuthSession = useCallback(() => {
+    setSessionTokens("", "");
+    setAuthUser(null);
+    setMessages([]);
+    setChatSessions([]);
+    setActiveChatId(null);
+    localStorage.removeItem("active_chat_id");
+  }, [setSessionTokens]);
+
   useEffect(() => {
+    let cancelled = false;
+    const boot = async () => {
+      if (accessToken) {
+        await loadCurrentUser(accessToken);
+        return;
+      }
+      const refreshed = await tryRefreshSession();
+      if (!refreshed && !cancelled) {
+        setAuthUser(null);
+      }
+    };
+    void boot();
+    return () => { cancelled = true; };
+  }, [accessToken, tryRefreshSession, loadCurrentUser]);
+
+  useEffect(() => {
+    if (!accessToken) return undefined;
     mountedRef.current = true;
 
     const setupListeners = (socketInstance) => {
@@ -343,13 +409,11 @@ function App() {
         setIsConnected(true);
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
-        socketInstance.emit("chat:list", { userId: userIdRef.current });
+        socketInstance.emit("chat:list");
         socketInstance.emit("agent:tools:list");
         fetchMemoryProfile();
-        fetchSystemStatus();
-        fetchTriggers();
         if (activeChatIdRef.current) {
-          socketInstance.emit("chat:history", { userId: userIdRef.current, chatId: activeChatIdRef.current });
+          socketInstance.emit("chat:history", { chatId: activeChatIdRef.current });
         }
       });
 
@@ -365,7 +429,11 @@ function App() {
 
       socketInstance.on("connect_error", (err) => {
         if (!mountedRef.current) return;
-        setConnectionError(err.message);
+        setConnectionError(err.message || "Connection failed");
+        if (String(err?.message || "").toLowerCase().includes("unauthorized")) {
+          clearAuthSession();
+          return;
+        }
         if (scheduleReconnectFnRef.current) scheduleReconnectFnRef.current();
       });
 
@@ -389,15 +457,20 @@ function App() {
         if (!mountedRef.current) return;
         if (data?.messages) {
           setMessages(data.messages.map((m) => ({
-            role: m.role, content: m.content, imageUrls: m.imageUrls,
-            audioUrl: m.audioUrl, feedback: m.feedback, isError: m.isError, _id: m._id,
+            role: m.role,
+            content: m.content,
+            imageUrls: Array.isArray(m.imageUrls) ? m.imageUrls.map((url) => normalizeMediaUrl(url)).filter(Boolean) : [],
+            audioUrl: normalizeMediaUrl(m.audioUrl),
+            feedback: m.feedback,
+            isError: m.isError,
+            _id: m._id,
           })));
         }
       });
 
       socketInstance.on("chat:deleted", () => {
         if (!mountedRef.current) return;
-        socketInstance.emit("chat:list", { userId: userIdRef.current });
+        socketInstance.emit("chat:list");
       });
 
       socketInstance.on("chat:suggestion", (data) => {
@@ -424,29 +497,8 @@ function App() {
 
       socketInstance.on("agent:tool:result", (data) => {
         if (!mountedRef.current) return;
-        pushAgentEvent("result", data);
-      });
-
-      socketInstance.on("agent:tool:error", (data) => {
-        if (!mountedRef.current) return;
-        pushAgentEvent("error", data);
-      });
-
-      socketInstance.on("agent:confirm:req", (data) => {
-        if (!mountedRef.current) return;
-        setPendingAgentConfirmation(data);
-        pushAgentEvent("confirm", data);
-      });
-
-      socketInstance.on("agent:done", (data) => {
-        if (!mountedRef.current) return;
         setPendingAgentConfirmation(null);
         pushAgentEvent("done", data);
-      });
-
-      socketInstance.on("trigger:alert", (data) => {
-        if (!mountedRef.current) return;
-        pushTriggerAlert(data);
       });
 
       socketInstance.on("chat:reply:start", () => {
@@ -454,29 +506,32 @@ function App() {
         setIsWaitingReply(false);
         setIsTyping(true);
         isGenerationActiveRef.current = true;
-        setMessages((prev) => [...prev, { role: "assistant", content: "", id: `temp_${Date.now()}` }]);
+        pendingAssistantChunkRef.current = "";
+        const assistantId = `temp_${Date.now()}`;
+        assistantMessageIdRef.current = assistantId;
+        setMessages((prev) => [...prev, { role: "assistant", content: "", id: assistantId }]);
         audioQueueRef.current = [];
       });
 
       socketInstance.on("chat:reply:chunk", (data) => {
         if (!mountedRef.current || !isGenerationActiveRef.current) return;
-        setMessages((prev) => {
-          const arr = [...prev];
-          const last = arr[arr.length - 1];
-          if (last?.role === "assistant") arr[arr.length - 1] = { ...last, content: last.content + (data?.chunk || "") };
-          return arr;
-        });
+        if (!data?.chunk) return;
+        pendingAssistantChunkRef.current += data.chunk;
+        if (!chunkFlushTimerRef.current) {
+          chunkFlushTimerRef.current = setTimeout(flushAssistantChunks, STREAM_CHUNK_FLUSH_MS);
+        }
       });
 
       socketInstance.on("chat:reply:images", (data) => {
         if (!mountedRef.current) return;
         if (data?.images) {
+          const normalized = data.images.map((img) => normalizeMediaUrl(img)).filter(Boolean);
           setMessages((prev) => {
             const arr = [...prev];
             for (let i = arr.length - 1; i >= 0; i--) {
               if (arr[i].role === "assistant") {
                 const existing = arr[i].imageUrls || [];
-                const fresh = data.images.filter((img) => !existing.includes(img));
+                const fresh = normalized.filter((img) => !existing.includes(img));
                 if (fresh.length > 0) arr[i] = { ...arr[i], imageUrls: [...existing, ...fresh] };
                 break;
               }
@@ -488,12 +543,13 @@ function App() {
 
       socketInstance.on("chat:reply:file", (data) => {
         if (!mountedRef.current || !data?.url) return;
+        const fileUrl = normalizeMediaUrl(data.url);
         setMessages((prev) => {
           const arr = [...prev];
           for (let i = arr.length - 1; i >= 0; i--) {
             if (arr[i].role === "assistant") {
-              const link = `\n\nDownload ${data.type || "file"}: ${data.url}`;
-              if (!arr[i].content?.includes(data.url))
+              const link = `\n\nDownload ${data.type || "file"}: ${fileUrl}`;
+              if (!arr[i].content?.includes(fileUrl))
                 arr[i] = { ...arr[i], content: `${arr[i].content || ""}${link}` };
               break;
             }
@@ -504,7 +560,9 @@ function App() {
 
       socketInstance.on("chat:reply:end", () => {
         if (!mountedRef.current) return;
+        flushAssistantChunks();
         isGenerationActiveRef.current = false;
+        assistantMessageIdRef.current = null;
         setIsTyping(false);
         fetchMemoryProfile();
       });
@@ -512,7 +570,10 @@ function App() {
       socketInstance.on("chat:stopped", () => {
         if (!mountedRef.current) return;
         setIsWaitingReply(false);
+        flushAssistantChunks();
+        pendingAssistantChunkRef.current = "";
         isGenerationActiveRef.current = false;
+        assistantMessageIdRef.current = null;
         setIsTyping(false);
         clearAudioQueue();
       });
@@ -520,7 +581,10 @@ function App() {
       socketInstance.on("chat:error", (data) => {
         if (!mountedRef.current) return;
         setIsWaitingReply(false);
+        flushAssistantChunks();
+        pendingAssistantChunkRef.current = "";
         isGenerationActiveRef.current = false;
+        assistantMessageIdRef.current = null;
         setIsTyping(false);
         if (data?.message)
           setMessages((prev) => [...prev, { role: "assistant", content: data.message, isError: true, id: `err_${Date.now()}` }]);
@@ -528,10 +592,14 @@ function App() {
 
       socketInstance.on("audio:ready", (data) => {
         if (!mountedRef.current) return;
-        if (localStorage.getItem("auto_speak") === "true" && data?.url) {
+        const savedAutoSpeak = localStorage.getItem("auto_speak");
+        const autoSpeakEnabled = savedAutoSpeak === null ? true : savedAutoSpeak === "true";
+        if (autoSpeakEnabled && data?.url) {
           try {
-            const audio = new Audio(data.url);
+            const audioUrl = normalizeMediaUrl(data.url);
+            const audio = new Audio(audioUrl);
             audio.preload = "auto";
+            audio.crossOrigin = "anonymous";
             audioQueueRef.current.push(audio);
             if (!isSpeakingRef.current && playNextFnRef.current) playNextFnRef.current();
           } catch (err) {
@@ -556,6 +624,7 @@ function App() {
       reconnectionDelay: RECONNECT_DELAY,
       reconnectionDelayMax: 10000,
       timeout: 15000,
+      auth: { token: `Bearer ${accessToken}` }
     });
 
     socketRef.current = newSocket;
@@ -564,23 +633,13 @@ function App() {
     return () => {
       mountedRef.current = false;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (chunkFlushTimerRef.current) clearTimeout(chunkFlushTimerRef.current);
+      chunkFlushTimerRef.current = null;
+      pendingAssistantChunkRef.current = "";
       if (newSocket) { newSocket.removeAllListeners(); newSocket.disconnect(); }
       clearAudioQueue();
     };
-  }, [clearAudioQueue, scheduleReconnect, pushAgentEvent, pushTriggerAlert, fetchMemoryProfile, fetchSystemStatus, fetchTriggers]);
-
-  useEffect(() => {
-    if (!isConnected) {
-      return undefined;
-    }
-
-    fetchSystemStatus();
-    const intervalId = window.setInterval(fetchSystemStatus, 10000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [isConnected, fetchSystemStatus]);
+  }, [accessToken, clearAudioQueue, scheduleReconnect, clearAuthSession, pushAgentEvent, fetchMemoryProfile, flushAssistantChunks, normalizeMediaUrl]);
 
   const handleStopAudio = useCallback(() => clearAudioQueue(), [clearAudioQueue]);
 
@@ -589,7 +648,6 @@ function App() {
     isGenerationActiveRef.current = false;
     setIsWaitingReply(true);
     socketRef.current.emit("chat:message", {
-      userId,
       chatId: activeChatId,
       message: content || "",
       fileUrl: fileType === "image" ? null : fileUrl,
@@ -600,9 +658,9 @@ function App() {
     });
     setMessages((prev) => [
       ...prev,
-      { role: "user", content, imageUrls: fileType === "image" ? (fileUrl ? [fileUrl] : []) : [] },
+      { role: "user", content, imageUrls: fileType === "image" ? (fileUrl ? [normalizeMediaUrl(fileUrl)] : []) : [] },
     ]);
-  }, [userId, activeChatId, modelPreference]);
+  }, [activeChatId, modelPreference, normalizeMediaUrl]);
 
   const handleSelectChat = useCallback((chatId) => {
     setActiveChatId(chatId);
@@ -610,8 +668,8 @@ function App() {
     setMessages([]);
     setSuggestion("");
     if (socketRef.current?.connected)
-      socketRef.current.emit("chat:history", { userId, chatId });
-  }, [userId]);
+      socketRef.current.emit("chat:history", { chatId });
+  }, []);
 
   const handleDeleteChat = useCallback((chatId) => {
     if (socketRef.current?.connected)
@@ -653,26 +711,17 @@ function App() {
     const presets = {
       focus: {
         memory: false,
-        triggers: false,
-        system: false,
         console: false,
-        toolFeed: false,
         statusRing: true
       },
       dev: {
         memory: false,
-        triggers: false,
-        system: true,
         console: true,
-        toolFeed: true,
         statusRing: true
       },
       mission: {
         memory: true,
-        triggers: true,
-        system: true,
         console: true,
-        toolFeed: true,
         statusRing: true
       }
     };
@@ -691,10 +740,9 @@ function App() {
     socketRef.current.emit("agent:run", {
       tool,
       params,
-      userId,
-      sessionId: activeChatId || `session-${userId}`
+      sessionId: activeChatId || `session-${authUser?.id || "unknown"}`
     });
-  }, [activeChatId, userId]);
+  }, [activeChatId, authUser]);
 
   const handleConfirmAgentTool = useCallback((token) => {
     if (!socketRef.current?.connected) return;
@@ -716,69 +764,176 @@ function App() {
     if (!socketRef.current?.connected || !activeChatId) return;
     const refinePrompt = `Please refine and improve the following response: ${content}`;
     socketRef.current.emit("chat:message", {
-      userId,
       chatId: activeChatId,
       message: refinePrompt,
       modelPreference,
     });
-  }, [userId, activeChatId, modelPreference]);
+  }, [activeChatId, modelPreference]);
 
-  const handleToggleTrigger = useCallback((trigger) => {
-    setUpdatingTriggerId(trigger.id);
-    fetch(`${SOCKET_URL}/api/triggers/${trigger.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !trigger.enabled })
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to update trigger");
-        }
-        return response.json();
-      })
-      .then(() => {
-        fetchTriggers();
-      })
-      .catch(() => {})
-      .finally(() => {
-        setUpdatingTriggerId("");
-      });
-  }, [fetchTriggers]);
+  const handleAuthSubmit = useCallback(async () => {
+    setIsAuthLoading(true);
+    setAuthError("");
+    try {
+      const email = authEmail.trim().toLowerCase();
+      const password = authPassword;
+      const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const handleCreateTrigger = useCallback((triggerDraft) => {
-    setIsCreatingTrigger(true);
-    fetch(`${SOCKET_URL}/api/triggers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(triggerDraft)
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to create trigger");
-        }
-        return response.json();
-      })
-      .then(() => {
-        fetchTriggers();
-      })
-      .catch(() => {})
-      .finally(() => {
-        setIsCreatingTrigger(false);
+      if (!EMAIL_PATTERN.test(email)) {
+        throw new Error("Enter a valid email address");
+      }
+      if (password.length < 8) {
+        throw new Error("Password must be at least 8 characters");
+      }
+
+      const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+      const payload = authMode === "register"
+        ? { email, password, displayName: authDisplayName }
+        : { email, password };
+      const res = await fetch(`${SOCKET_URL}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       });
-  }, [fetchTriggers]);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Invalid credentials");
+        }
+        if (res.status === 409) {
+          throw new Error("Email already registered");
+        }
+        throw new Error(data.error || "Authentication failed");
+      }
+      setSessionTokens(data.accessToken, data.refreshToken);
+      setAuthUser(data.user || null);
+    } catch (err) {
+      setAuthError(err.message || "Authentication failed");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }, [authMode, authEmail, authPassword, authDisplayName, setSessionTokens]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      if (accessToken) {
+        await fetch(`${SOCKET_URL}/api/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+      }
+    } catch (err) {
+      console.warn("Logout failed:", err);
+    }
+    clearAuthSession();
+  }, [accessToken, clearAuthSession]);
+
+  if (!authUser) {
+    return (
+      <div className="h-screen flex items-center justify-center px-4" style={{ background: 'var(--color-background)' }}>
+        <div className="w-full max-w-md rounded-2xl p-8 warm-card soft-shadow-lg">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-primary)' }}>
+              <Sparkles size={18} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-display font-semibold" style={{ color: 'var(--color-text-primary)' }}>Sign in to Synapse</h2>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {authMode === "register" ? "Create an account" : "Welcome back"}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Email</label>
+              <input 
+                value={authEmail} 
+                onChange={(e) => setAuthEmail(e.target.value)} 
+                placeholder="you@example.com" 
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                style={{ 
+                  background: 'var(--color-surface-soft)', 
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-background-soft)'
+                }} 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Password</label>
+              <div className="relative">
+                <input 
+                  value={authPassword} 
+                  onChange={(e) => setAuthPassword(e.target.value)} 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="Min. 8 characters" 
+                  className="w-full px-4 py-3 pr-12 rounded-xl text-sm outline-none transition-all"
+                  style={{ 
+                    background: 'var(--color-surface-soft)', 
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-background-soft)'
+                  }} 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            {authMode === "register" && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Display name (optional)</label>
+                <input 
+                  value={authDisplayName} 
+                  onChange={(e) => setAuthDisplayName(e.target.value)} 
+                  placeholder="Your name" 
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                  style={{ 
+                    background: 'var(--color-surface-soft)', 
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-background-soft)'
+                  }} 
+                />
+              </div>
+            )}
+            {authError && (
+              <p className="text-sm" style={{ color: 'var(--color-error)' }}>{authError}</p>
+            )}
+            <button 
+              disabled={isAuthLoading} 
+              onClick={handleAuthSubmit} 
+              className="w-full px-4 py-3 rounded-xl text-white font-medium transition-all hover:opacity-90 active:scale-[0.98]"
+              style={{ background: 'var(--color-primary)' }}
+            >
+              {isAuthLoading ? "Please wait..." : authMode === "register" ? "Create account" : "Sign in"}
+            </button>
+            <p className="text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              {authMode === "register" ? "Already have an account?" : "Don't have an account?"}{" "}
+              <button 
+                onClick={() => setAuthMode((m) => (m === "register" ? "login" : "register"))} 
+                className="font-medium"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                {authMode === "register" ? "Sign in" : "Register"}
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary>
-      {/* 3D Background */}
-      <ThreeBackground isSpeaking={isSpeaking} />
-
       {/* Connection toast */}
       <ConnectionToast isConnected={isConnected} connectionError={connectionError} />
 
       {/* Layout */}
       <div
         className="flex h-screen w-full overflow-hidden relative"
-        style={{ zIndex: 1, fontFamily: 'Space Grotesk, sans-serif' }}
+        style={{ zIndex: 1 }}
       >
         <Sidebar
           sessions={chatSessions}
@@ -791,6 +946,7 @@ function App() {
             setSuggestion("");
           }}
           onDeleteChat={handleDeleteChat}
+          onLogout={handleLogout}
           panelPrefs={panelPrefs}
           onTogglePanel={handleTogglePanel}
           activeLayoutPreset={activeLayoutPreset}
@@ -820,50 +976,19 @@ function App() {
             clearSuggestion={handleClearSuggestion}
             agentEvents={agentEvents}
             pendingAgentConfirmation={pendingAgentConfirmation}
-            showToolFeed={panelPrefs.toolFeed && !hasRightDockPanels}
             showStatusRing={panelPrefs.statusRing}
-          />
-          
-          {/* 3D Interactive Avatar on the right (hidden on smaller screens) */}
-          <AvatarCanvas
-            isTyping={isTyping}
-            isSpeaking={isSpeaking}
-            isDockCompressed={hasRightDockPanels}
           />
         </main>
 
         {/* Right Sidebar — strictly for auxiliary panels */}
         {hasRightDockPanels && (
-          <aside className="w-[320px] shrink-0 h-full hidden lg:flex flex-col gap-3 border-l border-[var(--color-tactical-blue)] bg-[rgba(5,7,15,0.85)] overflow-y-auto hide-scrollbar relative z-10 backdrop-blur-sm p-3">
+          <aside className="w-[320px] shrink-0 h-full hidden lg:flex flex-col gap-3 overflow-y-auto hide-scrollbar relative z-10 p-3" style={{ background: 'var(--color-sand)', borderLeft: '1px solid var(--color-warm-beige)' }}>
             {panelPrefs.memory && (
               <MemoryPanel
                 facts={memoryFacts}
                 episodes={memoryEpisodes}
                 profile={memoryProfile}
                 isConnected={isConnected}
-              />
-            )}
-            {panelPrefs.triggers && (
-              <TriggerPanel
-                triggers={triggers}
-                alerts={triggerAlerts}
-                isConnected={isConnected}
-                onToggleTrigger={handleToggleTrigger}
-                isUpdatingId={updatingTriggerId}
-                onCreateTrigger={handleCreateTrigger}
-                isCreating={isCreatingTrigger}
-              />
-            )}
-            {panelPrefs.system && (
-              <SystemPanel
-                status={systemStatus}
-                isConnected={isConnected}
-              />
-            )}
-            {panelPrefs.toolFeed && (
-              <ToolFeed
-                events={agentEvents}
-                docked
               />
             )}
             <div className="flex-1 min-h-[20px]" />

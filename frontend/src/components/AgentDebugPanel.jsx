@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, CheckCircle2, ChevronDown, ChevronUp, Loader2, ShieldAlert, TerminalSquare, XCircle, Terminal } from "lucide-react";
+import { Bot, CheckCircle2, ChevronDown, ChevronUp, Loader2, ShieldAlert, Terminal, XCircle } from "lucide-react";
 
 const DEFAULT_GIT_ACTION = "branch";
 const DEFAULT_FILESYSTEM_ACTION = "list";
@@ -43,7 +43,7 @@ export default function AgentDebugPanel({
     if (tools && tools.length > 0) {
       return tools.map((tool) => tool.name);
     }
-    return ["browser", "git", "filesystem", "process", "screenshot", "terminal"];
+    return ["browser", "git", "filesystem", "screenshot", "terminal"];
   }, [tools]);
 
   const handleRun = () => {
@@ -81,20 +81,20 @@ export default function AgentDebugPanel({
 
   return (
     <div
-      className={`font-mono transition-all duration-300 w-full hud-panel flex flex-col bg-transparent`}
+      className="transition-all duration-300 w-full warm-card overflow-hidden"
     >
       <button
         type="button"
         onClick={() => setIsMinimized(!isMinimized)}
-        className="px-3 py-2 flex items-center justify-between hover:bg-[rgba(0,240,255,0.05)] transition-colors text-[10px] uppercase font-bold text-[var(--color-cyan)]"
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-[var(--color-surface-soft)] transition-colors rounded-t-2xl"
       >
-        <span className="flex items-center gap-2">
-          <Terminal size={12} />
-          {isMinimized ? "SYS_CONSOLE" : "CONSOLE_ACTV"}
+        <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+          <Terminal size={14} style={{ color: 'var(--color-primary)' }} />
+          Console
         </span>
         <ChevronDown 
           size={14} 
-          className={`transition-transform duration-300 ${isMinimized ? "rotate-180" : ""}`} 
+          style={{ color: 'var(--color-text-muted)', transform: isMinimized ? "rotate(180deg)" : "rotate(0deg)", transition: 'transform 0.2s' }} 
         />
       </button>
 
@@ -102,12 +102,13 @@ export default function AgentDebugPanel({
         <div className="px-4 pb-4">
           <div className="pt-3 flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                AGENT_TOOL
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span style={{ color: 'var(--color-text-primary)' }}>Tool</span>
                 <select
                   value={selectedTool}
                   onChange={(e) => setSelectedTool(e.target.value)}
-                  className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                  className="px-3 py-2.5 text-sm outline-none rounded-xl"
+                  style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                 >
                   {toolOptions.map((toolName) => (
                     <option key={toolName} value={toolName}>
@@ -118,12 +119,13 @@ export default function AgentDebugPanel({
               </label>
 
               {selectedTool === "git" && (
-                <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                  ACTION
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span style={{ color: 'var(--color-text-primary)' }}>Action</span>
                   <select
                     value={gitAction}
                     onChange={(e) => setGitAction(e.target.value)}
-                    className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                    className="px-3 py-2.5 text-sm outline-none rounded-xl"
+                    style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                   >
                     <option value="branch">branch</option>
                     <option value="status">status</option>
@@ -135,12 +137,13 @@ export default function AgentDebugPanel({
 
               {selectedTool === "filesystem" && (
                 <>
-                  <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                    ACTION
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span style={{ color: 'var(--color-text-primary)' }}>Action</span>
                     <select
                       value={filesystemAction}
                       onChange={(e) => setFilesystemAction(e.target.value)}
-                      className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                      className="px-3 py-2.5 text-sm outline-none rounded-xl"
+                      style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                     >
                       <option value="list">list</option>
                       <option value="read">read</option>
@@ -150,22 +153,24 @@ export default function AgentDebugPanel({
                       <option value="mkdir">mkdir</option>
                     </select>
                   </label>
-                  <label className="col-span-2 flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                    TARGET_PATH
+                  <label className="col-span-2 flex flex-col gap-1.5 text-sm">
+                    <span style={{ color: 'var(--color-text-primary)' }}>Path</span>
                     <input
                       value={filesystemPath}
                       onChange={(e) => setFilesystemPath(e.target.value)}
-                      className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                      className="px-3 py-2.5 text-sm outline-none rounded-xl"
+                      style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                     />
                   </label>
                   {(filesystemAction === "write" || filesystemAction === "append") && (
-                    <label className="col-span-2 flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                      FILE_CONTENT
+                    <label className="col-span-2 flex flex-col gap-1.5 text-sm">
+                      <span style={{ color: 'var(--color-text-primary)' }}>Content</span>
                       <textarea
                         value={filesystemContent}
                         onChange={(e) => setFilesystemContent(e.target.value)}
                         rows={4}
-                        className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-neon-orange)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                        className="px-3 py-2.5 text-sm outline-none rounded-xl resize-none font-mono"
+                        style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-primary)30' }}
                       />
                     </label>
                   )}
@@ -173,42 +178,44 @@ export default function AgentDebugPanel({
               )}
 
               {selectedTool === "browser" && (
-                <label className="col-span-2 flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                  TARGET_URL
+                <label className="col-span-2 flex flex-col gap-1.5 text-sm">
+                  <span style={{ color: 'var(--color-text-primary)' }}>URL</span>
                   <input
                     value={browserUrl}
                     onChange={(e) => setBrowserUrl(e.target.value)}
-                    className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                    className="px-3 py-2.5 text-sm outline-none rounded-xl"
+                    style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                   />
                 </label>
               )}
             </div>
 
             {selectedTool === "process" && (
-              <div className="px-3 py-2 text-[9px] uppercase tracking-widest border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-[#94a3b8]">
-                STATUS_ACTION // read-only machine snapshot
+              <div className="px-3 py-2.5 text-sm rounded-xl" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-muted)' }}>
+                Status action - read only
               </div>
             )}
 
             {selectedTool === "screenshot" && (
-              <div className="px-3 py-2 text-[9px] uppercase tracking-widest border border-[var(--color-neon-orange)] bg-[rgba(255,144,0,0.08)] text-[#fdba74]">
-                SCREEN_CAPTURE // confirmation required
+              <div className="px-3 py-2.5 text-sm rounded-xl" style={{ background: 'var(--color-warning)15', color: 'var(--color-warning)' }}>
+                Screen capture - requires confirmation
               </div>
             )}
 
             {selectedTool === "terminal" && (
-              <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                CMD_EXEC
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span style={{ color: 'var(--color-text-primary)' }}>Command</span>
                 <input
                   value={terminalCommand}
                   onChange={(e) => setTerminalCommand(e.target.value)}
-                  className="px-2 py-1.5 text-[10px] outline-none border border-[var(--color-tactical-blue)] bg-[rgba(10,17,32,0.9)] text-white font-mono focus:border-[var(--color-cyan)]"
+                  className="px-3 py-2.5 text-sm outline-none rounded-xl font-mono"
+                  style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-primary)', border: '1px solid var(--color-background-soft)' }}
                 />
-                <div className="mt-1 text-[9px]" style={{ color: "#94a3b8" }}>
-                  Safe inspect: `pwd`, `ls`, `node --version`, `npm list`
+                <div className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Safe: pwd, ls, node --version, npm list
                 </div>
-                <div className="text-[9px]" style={{ color: "#fdba74" }}>
-                  Confirmation-gated: `npm test`, `npm run build`, `npm run dev`
+                <div className="text-xs" style={{ color: 'var(--color-warning)' }}>
+                  Requires confirmation: npm test, npm run build, npm run dev
                 </div>
               </label>
             )}
@@ -217,21 +224,25 @@ export default function AgentDebugPanel({
               type="button"
               onClick={handleRun}
               disabled={!isConnected}
-              className="w-full px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50 border border-[var(--color-cyan)] text-[var(--color-cyan)] hover:bg-[var(--color-cyan)] hover:text-black bg-[rgba(0,240,255,0.1)] shadow-[0_0_10px_rgba(0,240,255,0.2)]"
+              className="w-full px-3 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50"
+              style={{
+                background: 'var(--color-primary)',
+                color: 'white',
+              }}
             >
-              [ EXEC_TOOL ]
+              Run Tool
             </button>
 
             {pendingConfirmation && (
-              <div className="p-3 flex flex-col gap-3 border border-[var(--color-neon-orange)] bg-[rgba(255,144,0,0.1)] relative">
+              <div className="p-3 flex flex-col gap-3 rounded-xl" style={{ background: 'var(--color-warning)15', border: '1px solid var(--color-warning)30' }}>
                 <div className="flex items-start gap-3">
-                  <ShieldAlert size={14} className="text-[var(--color-neon-orange)] mt-0.5 animate-pulse" />
+                  <ShieldAlert size={16} style={{ color: 'var(--color-warning)' }} className="mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold text-[var(--color-neon-orange)] uppercase tracking-widest">
-                      PERM_REQ_DETECTED
+                    <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      Permission Required
                     </div>
-                    <div className="text-[8px] mt-1 text-slate-300 uppercase tracking-widest">
-                      {pendingConfirmation.tool} // RISK:{pendingConfirmation.risk}
+                    <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                      {pendingConfirmation.tool} - Risk: {pendingConfirmation.risk}
                     </div>
                   </div>
                 </div>
@@ -239,56 +250,61 @@ export default function AgentDebugPanel({
                   <button
                     type="button"
                     onClick={() => onConfirm(pendingConfirmation.token)}
-                    className="flex-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border border-[#4ade80] text-[#4ade80] bg-[rgba(74,222,128,0.1)] hover:bg-[#4ade80] hover:text-black transition-colors"
+                    className="flex-1 px-3 py-2 text-sm font-medium rounded-xl transition-colors"
+                    style={{ background: 'var(--color-success)15', color: 'var(--color-success)', border: '1px solid var(--color-success)30' }}
                   >
-                    AUTH
+                    Allow
                   </button>
                   <button
                     type="button"
                     onClick={() => onCancel(pendingConfirmation.token)}
-                    className="flex-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border border-[var(--color-neon-red)] text-[var(--color-neon-red)] bg-[rgba(255,42,42,0.1)] hover:bg-[var(--color-neon-red)] hover:text-white transition-colors"
+                    className="flex-1 px-3 py-2 text-sm font-medium rounded-xl transition-colors"
+                    style={{ background: 'var(--color-error)15', color: 'var(--color-error)', border: '1px solid var(--color-error)30' }}
                   >
-                    DENY
+                    Deny
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="flex flex-col gap-1.5 mt-2">
-              <div className="flex items-center justify-between border-t border-dashed border-[var(--color-tactical-blue)] pt-2">
-                <div className="text-[9px] uppercase tracking-widest text-[#94a3b8]">
-                  SYS_EVENTS
+            <div className="flex flex-col gap-2 mt-2" style={{ borderTop: '1px solid var(--color-background-soft)', paddingTop: '12px' }}>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                  Events
                 </div>
                 {onClearEvents && events.length > 0 && (
-                  <button onClick={onClearEvents} className="text-[8px] text-slate-500 hover:text-[var(--color-neon-red)] uppercase">
-                    [CLEAR]
+                  <button onClick={onClearEvents} className="text-xs hover:text-[var(--color-primary)] transition-colors" style={{ color: 'var(--color-text-muted)' }}>
+                    Clear
                   </button>
                 )}
               </div>
               <div
-                className="p-2 h-48 overflow-y-auto flex flex-col gap-1 bg-[rgba(0,0,0,0.6)] border border-[var(--color-tactical-blue)] hide-scrollbar"
+                className="p-3 h-40 overflow-y-auto flex flex-col gap-2 rounded-xl hide-scrollbar"
+                style={{ background: 'var(--color-surface-soft)' }}
               >
                 {events.length === 0 ? (
-                  <div className="text-[9px] text-slate-600 uppercase tracking-widest text-center mt-4">
-                    [ NO_EVENTS_LOGGED ]
+                  <div className="text-sm text-center mt-4" style={{ color: 'var(--color-text-muted)' }}>
+                    No events
                   </div>
                 ) : (
                   events.map((event) => (
                     <div
                       key={event.id}
-                      className="p-1.5 border-l-2 border-[var(--color-tactical-blue)] bg-[rgba(30,58,138,0.1)]"
+                      className="p-2.5 rounded-lg"
+                      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-background-soft)' }}
                     >
-                      <div className="flex items-center gap-1.5 text-[8px] uppercase tracking-widest text-[#94a3b8]">
-                        {event.type === "thinking" && <Bot size={10} />}
-                        {event.type === "start" && <Loader2 size={10} className="animate-spin" />}
-                        {event.type === "result" && <CheckCircle2 size={10} className="text-[#4ade80]" />}
-                        {event.type === "error" && <XCircle size={10} className="text-[var(--color-neon-red)]" />}
-                        <span className={event.type === "error" ? "text-[var(--color-neon-red)]" : "text-[var(--color-cyan)]"}>
-                          {" >> "} {event.type}
+                      <div className="flex items-center gap-2 text-xs">
+                        {event.type === "thinking" && <Bot size={10} style={{ color: 'var(--color-primary)' }} />}
+                        {event.type === "start" && <Loader2 size={10} className="animate-spin" style={{ color: 'var(--color-primary)' }} />}
+                        {event.type === "result" && <CheckCircle2 size={10} style={{ color: 'var(--color-success)' }} />}
+                        {event.type === "error" && <XCircle size={10} style={{ color: 'var(--color-error)' }} />}
+                        <span className="font-medium" style={{ color: event.type === "error" ? 'var(--color-error)' : 'var(--color-text-primary)' }}>
+                          {event.type}
                         </span>
                       </div>
                       <pre
-                        className="mt-1 text-[9px] whitespace-pre-wrap break-words text-[#e2e8f0]"
+                        className="mt-1 text-xs whitespace-pre-wrap break-words"
+                        style={{ color: 'var(--color-text-secondary)' }}
                       >
                         {formatPayload(event.payload)}
                       </pre>

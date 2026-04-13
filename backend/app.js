@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
@@ -7,22 +6,21 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
-import config from "./src/utils/config.js";
+import config from "./src/config/env.js";
 import logger from "./src/utils/logger.js";
 import { connectDB } from "./src/config/database.js";
 import { initSocket } from "./src/config/socket.js";
 import { attachListeners } from "./src/sockets/index.js";
 import { initWorker } from "./src/queues/worker.js";
-import { initScheduler } from "./src/triggers/scheduler.js";
-import { errorHandler } from "./src/middleware/errorHandler.js";
+import { errorHandler, notFoundHandler } from "./src/middleware/errorHandler.js";
 import { getConfiguredModels } from "./src/services/chatRouter.js";
 
 import chatRoutes from "./src/routes/chat.js";
 import memoryRoutes from "./src/routes/memory.js";
-import systemRoutes from "./src/routes/system.js";
-import triggerRoutes from "./src/routes/triggers.js";
 import uploadRoutes from "./src/routes/upload.js";
 import sandboxRoutes from "./src/routes/sandbox.js";
+import authRoutes from "./src/routes/auth.js";
+import { requireAuth } from "./src/middleware/auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,25 +40,60 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
-const chatLimiter = rateLimit({
+const createLimiter = (options) => rateLimit({
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => config.app.nodeEnv === "development",
+  ...options,
+  keyGenerator: (req) => {
+    const userId = req.user?.id || req.headers["x-user-id"] || "anonymous";
+    return `${req.ip || "unknown"}-${userId}`;
+  }
+});
+
+const chatLimiter = createLimiter({
   windowMs: 60 * 1000,
   max: 60,
-  standardHeaders: true,
-  legacyHeaders: false
+  message: {
+    success: false,
+    error: { code: "RATE_LIMIT", message: "Too many chat requests. Please wait before trying again." }
+  }
 });
 
-const uploadLimiter = rateLimit({
+const uploadLimiter = createLimiter({
   windowMs: 60 * 1000,
   max: 20,
-  standardHeaders: true,
-  legacyHeaders: false
+  message: {
+    success: false,
+    error: { code: "RATE_LIMIT", message: "Too many upload requests. Please wait before trying again." }
+  }
 });
 
-const sandboxLimiter = rateLimit({
+const sandboxLimiter = createLimiter({
   windowMs: 60 * 1000,
   max: 15,
-  standardHeaders: true,
-  legacyHeaders: false
+  message: {
+    success: false,
+    error: { code: "RATE_LIMIT", message: "Too many sandbox requests. Please wait before trying again." }
+  }
+});
+
+const authLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    error: { code: "RATE_LIMIT", message: "Too many authentication attempts. Please wait 15 minutes." }
+  }
+});
+
+const genericLimiter = createLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: {
+    success: false,
+    error: { code: "RATE_LIMIT", message: "Too many requests. Please wait before trying again." }
+  }
 });
 
 const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.webm', '.mp3', '.wav', '.ogg'];
@@ -83,7 +116,6 @@ const io = initSocket(httpServer);
 attachListeners(io);
 
 initWorker();
-void initScheduler();
 
 app.get("/api/config", (req, res) => {
   res.json({
@@ -94,14 +126,14 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-app.use("/api/chat", chatLimiter, chatRoutes);
-app.use("/api/memory", memoryRoutes);
-app.use("/api/system", systemRoutes);
-app.use("/api/triggers", triggerRoutes);
-app.use("/api/upload", uploadLimiter, uploadRoutes);
-app.use("/api/sandbox", sandboxLimiter, sandboxRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/chat", requireAuth, chatLimiter, chatRoutes);
+app.use("/api/memory", requireAuth, genericLimiter, memoryRoutes);
+app.use("/api/upload", requireAuth, uploadLimiter, uploadRoutes);
+app.use("/api/sandbox", requireAuth, sandboxLimiter, sandboxRoutes);
 
 app.use(errorHandler);
+app.use(notFoundHandler);
 
 export const startServer = () => {
   if (serverStarted) {

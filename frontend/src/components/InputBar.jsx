@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect, useCallback, createElement } from "react";
-import { Send, ImagePlus, Mic, X, Loader2, Volume2, VolumeX, Square, FileText, Zap, TerminalSquare } from "lucide-react";
+import { Send, ImagePlus, Mic, X, Loader2, Volume2, VolumeX, Square, FileText, Sparkles, TerminalSquare } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ACCESS_TOKEN_KEY = "synapse_access_token";
 
 const SPEAKING_BAR_HEIGHTS = [6, 14, 9, 16, 8, 12, 7, 15, 10, 13, 5, 11, 8, 14, 9, 6, 12, 7, 10, 15, 6, 13, 8, 11];
 
 const ALLOWED_FILE_TYPES = [
   "image/jpeg", "image/png", "image/gif", "image/webp",
-  "application/pdf", "audio/webm", "audio/mp3", "audio/mpeg"
+  "application/pdf", "audio/webm", "audio/mp3", "audio/mpeg", "audio/wav", "audio/ogg"
 ];
 
 const validateFile = (file) => {
@@ -28,17 +29,14 @@ function ToolBtn({ onClick, disabled, icon: _Icon, label, active, color, pulse }
       disabled={disabled}
       title={label}
       className={clsx(
-        "tooltip relative w-9 h-9 flex items-center justify-center transition-all duration-200 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed",
+        "relative w-9 h-9 flex items-center justify-center transition-all duration-200 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl",
         pulse && "animate-pulse"
       )}
       data-tip={label}
       style={{
-        background: active ? `rgba(${color || '0,240,255'}, 0.15)` : 'transparent',
-        border: active ? `1px solid rgba(${color || '0,240,255'}, 0.3)` : '1px solid var(--color-tactical-blue)',
-        color: active ? `rgb(${color || '0,240,255'})` : '#6b5f8a',
+        background: active ? `${color || 'var(--color-primary)'}15` : 'transparent',
+        color: active ? (color || 'var(--color-primary)') : 'var(--color-text-muted)',
       }}
-      onMouseEnter={e => { if (!active && !disabled) e.currentTarget.style.color = `rgb(${color || '0,240,255'})`; }}
-      onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#6b5f8a'; }}
     >
       <Icon size={16} />
     </button>
@@ -56,16 +54,22 @@ export default function InputBar({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(() => localStorage.getItem("auto_speak") === "true");
+  const [autoSpeak, setAutoSpeak] = useState(() => {
+    const saved = localStorage.getItem("auto_speak");
+    return saved === null ? true : saved === "true";
+  });
   const [focused, setFocused] = useState(false);
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
+  const speechRecognitionRef = useRef(null);
+  const recordingSeedInputRef = useRef("");
   const recordingTimerRef = useRef(null);
   const suggestTimeoutRef = useRef(null);
   const toolsMenuRef = useRef(null);
   const blobUrlRef = useRef(null);
+  const [liveTranscript, setLiveTranscript] = useState("");
 
   useEffect(() => {
     localStorage.setItem("auto_speak", String(autoSpeak));
@@ -86,6 +90,9 @@ export default function InputBar({
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
+      }
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
       }
     };
   }, []);
@@ -120,10 +127,17 @@ export default function InputBar({
     if (!validation.valid) { setUploadError(validation.error); setIsUploading(false); throw new Error(validation.error); }
     const formData = new FormData();
     formData.append("file", fileToUpload);
+    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY) || "";
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 30000);
-      const res = await fetch(`${API_URL}/api/upload`, { method: "POST", body: formData, signal: ctrl.signal });
+      const url = `${API_URL}/api/upload`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: formData,
+        signal: ctrl.signal
+      });
       clearTimeout(tid);
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Upload failed`); }
       const data = await res.json();
@@ -184,7 +198,12 @@ export default function InputBar({
     if (recognitionRef.current && recognitionRef.current.state !== "inactive") {
       recognitionRef.current.stop();
     }
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
     recognitionRef.current = null;
+    setLiveTranscript("");
     setIsRecording(false);
   }, []);
 
@@ -199,6 +218,34 @@ export default function InputBar({
       const mr = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm"
       });
+      recordingSeedInputRef.current = input.trim() ? `${input.trim()} ` : "";
+      setLiveTranscript("");
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const live = new SpeechRecognition();
+          live.continuous = true;
+          live.interimResults = true;
+          live.lang = localStorage.getItem("speech_lang") || "en-US";
+          live.onresult = (event) => {
+            let transcript = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              transcript += event.results[i][0]?.transcript || "";
+            }
+            const normalized = transcript.replace(/\s+/g, " ").trim();
+            setLiveTranscript(normalized);
+            const prefix = recordingSeedInputRef.current;
+            setInput(`${prefix}${normalized}`.trimStart());
+          };
+          live.onerror = () => {};
+          speechRecognitionRef.current = live;
+          live.start();
+        } catch {
+          speechRecognitionRef.current = null;
+        }
+      }
+
       recognitionRef.current = mr;
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data?.size > 0) chunks.push(e.data); };
@@ -212,19 +259,17 @@ export default function InputBar({
       setIsRecording(true);
       
       recordingTimerRef.current = setInterval(() => {
-        // Enforce 60 sec limits
       }, 1000);
     } catch (err) {
       setUploadError(
-        err.name === "NotAllowedError" ? "SYS_FAULT: Microphone access denied." :
-        "MIC_FAULT: " + err.message
+        err.name === "NotAllowedError" ? "Microphone access denied" :
+        "Microphone error: " + err.message
       );
     }
-  }, [isRecording, stopRecording]);
+  }, [isRecording, stopRecording, input]);
 
   return (
-    <div className="relative mx-auto w-full max-w-3xl flex flex-col font-mono">
-      {/* Suggestion chip */}
+    <div className="relative mx-auto w-full max-w-3xl flex flex-col">
       <AnimatePresence>
         {suggestion && !disabled && (
           <motion.button
@@ -232,82 +277,90 @@ export default function InputBar({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             onClick={applySuggestion}
-            className="absolute -top-10 left-4 flex items-center gap-2 px-3 py-1.5 z-30 hud-panel border-[var(--color-neon-orange)] group bg-[rgba(10,17,32,0.95)]"
+            className="absolute -top-10 left-4 flex items-center gap-2 px-3 py-2 z-30 rounded-xl warm-card soft-shadow group"
           >
-            <Zap size={10} className="text-[var(--color-neon-orange)] animate-pulse" />
-            <span className="truncate max-w-[200px] text-[10px] text-[var(--color-neon-orange)] group-hover:text-white transition-colors">{" >> "} {suggestion}</span>
-            <span className="opacity-50 text-[9px] text-[var(--color-neon-orange)] tracking-wider">`[TAB]`</span>
+            <Sparkles size={12} style={{ color: 'var(--color-primary)' }} />
+            <span className="truncate max-w-[200px] text-sm group-hover:text-[var(--color-primary)] transition-colors">
+              {suggestion}
+            </span>
+            <span className="text-xs opacity-60">Tab</span>
           </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Error notice */}
       <AnimatePresence>
         {uploadError && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-3 px-3 py-2 mb-2 text-[10px] uppercase tracking-widest hud-panel border-[var(--color-neon-red)] bg-black"
+            className="flex items-center gap-3 px-3 py-2 mb-2 text-sm rounded-xl warm-card"
+            style={{ border: '1px solid var(--color-error)' }}
           >
-            <Zap size={12} className="text-[var(--color-neon-red)] animate-flicker" />
-            <span className="flex-1 text-[var(--color-neon-red)]">ERR: {uploadError}</span>
-            <button onClick={() => setUploadError(null)} className="text-[var(--color-neon-red)] hover:text-white">
-              <X size={12} />
+            <Sparkles size={14} style={{ color: 'var(--color-error)' }} />
+            <span className="flex-1" style={{ color: 'var(--color-error)' }}>Error: {uploadError}</span>
+            <button onClick={() => setUploadError(null)} className="p-1 rounded-lg hover:bg-[var(--color-background-soft)]" style={{ color: 'var(--color-error)' }}>
+              <X size={14} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* File preview chip */}
       <AnimatePresence>
         {file && (
           <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="flex items-center gap-3 px-2 py-2 mb-2 self-start hud-panel border-[var(--color-cyan)] bg-[rgba(5,7,15,0.9)] min-w-[200px]"
+            className="flex items-center gap-3 px-3 py-2 mb-2 self-start rounded-xl warm-card"
+            style={{ minWidth: '200px' }}
           >
             {file.type.startsWith("image/") ? (
-              <img src={blobUrlRef.current || URL.createObjectURL(file)} alt="preview" className="w-8 h-8 object-cover border border-[var(--color-tactical-blue)]" />
+              <img src={blobUrlRef.current || URL.createObjectURL(file)} alt="preview" className="w-8 h-8 object-cover rounded-lg" />
             ) : file.type.startsWith("audio/") ? (
-              <div className="w-8 h-8 flex items-center justify-center border border-[var(--color-tactical-blue)] text-[var(--color-cyan)] bg-[rgba(0,240,255,0.05)]"><Mic size={14} /></div>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg" style={{ background: 'var(--color-surface-soft)' }}>
+                <Mic size={14} style={{ color: 'var(--color-primary)' }} />
+              </div>
             ) : (
-              <div className="w-8 h-8 flex items-center justify-center border border-[var(--color-tactical-blue)] text-[var(--color-cyan)] bg-[rgba(0,240,255,0.05)]"><FileText size={14} /></div>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg" style={{ background: 'var(--color-surface-soft)' }}>
+                <FileText size={14} style={{ color: 'var(--color-primary)' }} />
+              </div>
             )}
             <div className="flex-1 min-w-0 flex flex-col justify-center">
-              <div className="truncate text-[9px] text-white uppercase font-bold">{file.name}</div>
-              <div className="text-[8px] text-[var(--color-cyan)] tracking-widest mt-0.5">SIZE: {(file.size / 1024).toFixed(1)} KB</div>
+              <div className="truncate text-xs font-medium">{file.name}</div>
+              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                {(file.size / 1024).toFixed(1)} KB
+              </div>
             </div>
-            <button onClick={() => { setFile(null); setUploadError(null); }} className="text-slate-500 hover:text-[var(--color-neon-red)] pr-1">
+            <button onClick={() => { setFile(null); setUploadError(null); }} className="p-1 rounded-lg hover:bg-[var(--color-background-soft)]" style={{ color: 'var(--color-text-muted)' }}>
               <X size={12} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Main input container ── */}
       <div
-        className={`relative flex flex-col transition-all duration-300 hud-panel bg-[rgba(10,17,32,0.9)] w-full block ${ 
-          focused ? 'border-[var(--color-cyan)] shadow-[0_0_20px_rgba(0,240,255,0.15)]' : isSpeaking ? 'border-[var(--color-neon-red)]' : 'border-[var(--color-tactical-blue)]'
-        }`}
+        className={clsx(
+          "relative flex flex-col transition-all duration-300 warm-card w-full",
+          focused ? 'soft-shadow-lg' : 'soft-shadow'
+        )}
       >
         {isSpeaking && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-end justify-center pb-0.5 gap-1 opacity-40">
+          <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-end justify-center pb-0.5 gap-1 opacity-30 rounded-2xl">
             {SPEAKING_BAR_HEIGHTS.map((height, i) => (
               <motion.div
                 key={i}
                 initial={{ height: `${height}px` }}
                 animate={{ height: [`${height - 4}px`, `${height + 2}px`, `${height - 4}px`] }}
                 transition={{ duration: 0.6 + (i % 4) * 0.12, repeat: Infinity, ease: "easeInOut", delay: i * 0.03 }}
-                className="w-[2px] bg-[var(--color-neon-red)]"
+                className="w-[2px] rounded-full"
+                style={{ background: 'var(--color-primary)' }}
               />
             ))}
           </div>
         )}
 
-        {/* Toolbar row */}
-        <div className="flex items-center gap-1.5 px-3 pt-3 pb-1">
+        <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
           <input
             type="file"
             accept="image/*,application/pdf,audio/*"
@@ -317,19 +370,19 @@ export default function InputBar({
           />
           <ToolBtn
             icon={ImagePlus}
-            label="Upload Data"
+            label="Upload file"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || isUploading}
-            color="0,240,255"
+            color="var(--color-primary)"
           />
 
           <div ref={toolsMenuRef} className="relative z-[60]">
             <ToolBtn
-              icon={Zap}
-              label="Sys Tools"
+              icon={Sparkles}
+              label="Tools"
               onClick={() => setIsToolsOpen(p => !p)}
               active={isToolsOpen}
-              color="255,144,0"
+              color="var(--color-primary)"
             />
             <AnimatePresence>
               {isToolsOpen && (
@@ -337,23 +390,22 @@ export default function InputBar({
                   initial={{ opacity: 0, y: 6, scale: 0.97 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                  transition={{ duration: 0.18 }}
-                  className="absolute bottom-full mb-2 left-0 flex flex-col min-w-[210px] hud-panel bg-[rgba(5,7,15,0.95)] z-[90]"
+                  transition={{ duration: 0.15 }}
+                  className="absolute bottom-full mb-2 left-0 flex flex-col min-w-[200px] rounded-xl warm-card soft-shadow-lg overflow-hidden"
                 >
                   {[
-                    { icon: TerminalSquare, label: "EXECUTE_SANDBOX", color: '#00f0ff', action: () => { setIsToolsOpen(false); onOpenSandbox?.(); } },
-                    { icon: ImagePlus, label: "GEN_IMAGERY", color: '#ff9000', action: () => { setInput("Generate an image of: "); setIsToolsOpen(false); } },
-                    { icon: FileText, label: "COMPILE_DOC", color: '#1e3a8a', action: () => { setInput("Create a PDF report about: "); setIsToolsOpen(false); } },
+                    { icon: TerminalSquare, label: "Code Sandbox", color: 'var(--color-primary)', action: () => { setIsToolsOpen(false); onOpenSandbox?.(); } },
+                    { icon: FileText, label: "Create PDF", color: 'var(--color-text-secondary)', action: () => { setInput("Create a PDF report about: "); setIsToolsOpen(false); } },
                    ].map(({ icon: _Icon, label, color, action }) => (
                      <button
                        key={label}
                        onClick={action}
-                       className="flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[var(--color-tactical-blue)] hover:bg-[rgba(0,240,255,0.05)]"
+                       className="flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-soft)]"
                      >
-                       <div className="w-5 h-5 flex items-center justify-center border border-dashed" style={{ borderColor: color, color }}>
-                         {createElement(_Icon, { size: 12 })}
+                       <div className="w-8 h-8 flex items-center justify-center rounded-xl" style={{ background: `${color}15`, color }}>
+                         {createElement(_Icon, { size: 14 })}
                        </div>
-                       <div className="text-[9px] font-bold uppercase tracking-widest text-white">{label}</div>
+                        <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{label}</div>
                      </button>
                    ))}
                 </motion.div>
@@ -363,21 +415,27 @@ export default function InputBar({
 
           <ToolBtn
             icon={Mic}
-            label={isRecording ? "Halt Mic" : "Open Mic"}
+            label={isRecording ? "Stop recording" : "Record audio"}
             onClick={toggleRecording}
             disabled={disabled || isUploading}
             active={isRecording}
-            color="255,42,42"
+            color="var(--color-primary)"
             pulse={isRecording}
           />
           {isRecording && (
-            <span className="text-[9px] text-[var(--color-neon-red)] ml-2 animate-pulse tracking-widest font-bold">
-              [ REC_SYNC ]
-            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs animate-pulse" style={{ color: 'var(--color-primary)' }}>
+                Recording...
+              </span>
+              {liveTranscript && (
+                <span className="text-[11px] truncate max-w-[240px]" style={{ color: 'var(--color-text-secondary)' }}>
+                  Live: {liveTranscript}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Textarea */}
         <div className="px-4 pb-2 relative mt-1 w-full bg-transparent">
           <textarea
             ref={textareaRef}
@@ -387,36 +445,43 @@ export default function InputBar({
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             placeholder={
-              disabled ? "AWAITING_RESPONSE..." :
-              isRecording ? "RECORDING_AUDIO >>_" :
-              "AWAITING_INPUT >>_"
+              disabled ? "Waiting for response..." :
+              isRecording ? "Recording audio..." :
+              "Type a message..."
             }
-            className="w-full bg-transparent text-[11px] resize-none outline-none py-2 leading-relaxed text-[#f1e9ff] break-words"
+            className="w-full bg-transparent text-sm resize-none outline-none py-2 leading-relaxed"
             style={{
               maxHeight: '180px',
               minHeight: '44px',
-              caretColor: 'var(--color-cyan)',
+              color: 'var(--color-text-primary)',
+              caretColor: 'var(--color-primary)',
             }}
             rows={1}
             disabled={disabled}
           />
-          <style>{`textarea::placeholder { color: #475569; letter-spacing: 0.1em; }`}</style>
         </div>
 
-        {/* Bottom action row */}
-        <div className="flex items-center justify-between px-3 pb-3 gap-2 border-t border-[var(--color-tactical-blue)] pt-3 w-full">
-          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
-            {Object.entries({ auto: "SYS_AUTO", chat: "CL_CHAT", code: "CX_CODE", reasoning: "R_REASON", casual: "FAST" }).map(([val, label]) => (
+        <div className="flex items-center justify-between px-4 pb-3 gap-2" style={{ borderTop: '1px solid var(--color-background-soft)', paddingTop: '12px' }}>
+          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+            {Object.entries({ auto: "Auto", chat: "Chat", code: "Code", reasoning: "Reason", casual: "Fast" }).map(([val, label]) => (
               <button
                 key={val}
                 onClick={() => onModelPreferenceChange?.(val)}
-                className={`px-2 py-1 text-[8px] font-bold uppercase tracking-widest whitespace-nowrap transition-all duration-200 shrink-0 border ${
+                className={clsx(
+                  "px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-all duration-200 shrink-0",
                   modelPreference === val 
-                    ? 'border-[var(--color-cyan)] text-[var(--color-cyan)] bg-[rgba(0,240,255,0.1)] shadow-[0_0_8px_rgba(0,240,255,0.2)]' 
-                    : 'border-[var(--color-tactical-blue)] text-slate-500 hover:border-[var(--color-cyan)]'
-                }`}
+                    ? 'warm-card' 
+                    : 'hover:bg-[var(--color-surface-soft)]'
+                )}
+                style={modelPreference === val ? { 
+                  border: '1px solid var(--color-primary)',
+                  background: 'var(--color-primary)10',
+                  color: 'var(--color-primary)'
+                } : {
+                  color: 'var(--color-text-secondary)'
+                }}
               >
-                [{label}]
+                {label}
               </button>
             ))}
           </div>
@@ -424,17 +489,22 @@ export default function InputBar({
           <div className="flex items-center gap-2 shrink-0">
             <ToolBtn
               icon={autoSpeak ? Volume2 : VolumeX}
-              label={autoSpeak ? "v_sync on" : "v_sync off"}
+              label={autoSpeak ? "Auto speak on" : "Auto speak off"}
               onClick={() => setAutoSpeak(!autoSpeak)}
               active={autoSpeak}
-              color="0,240,255"
+              color="var(--color-primary)"
             />
 
             {(isTyping || isSpeaking) ? (
               <button
                 onClick={() => { onStopMessage?.(); onStopAudio?.(); }}
-                className="w-8 h-8 flex items-center justify-center border border-[var(--color-neon-red)] bg-[rgba(255,42,42,0.15)] text-[var(--color-neon-red)] hover:bg-[var(--color-neon-red)] hover:text-white transition-all duration-200 active:scale-95 animate-pulse shrink-0"
-                title="Halt Process"
+                className="w-9 h-9 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
+                style={{ 
+                  background: 'var(--color-error)15', 
+                  color: 'var(--color-error)',
+                  border: '1px solid var(--color-error)'
+                }}
+                title="Stop"
               >
                 <Square size={12} fill="currentColor" />
               </button>
@@ -442,18 +512,14 @@ export default function InputBar({
               <button
                 onClick={handleSend}
                 disabled={(!input.trim() && !file) || disabled || isUploading}
-                className="w-8 h-8 flex items-center justify-center transition-all duration-200 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed border shrink-0"
+                className="w-9 h-9 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
                   background: (input.trim() || file) && !disabled && !isUploading
-                    ? 'rgba(0,240,255,0.15)'
-                    : 'rgba(30,58,138,0.1)',
-                  borderColor: (input.trim() || file) && !disabled && !isUploading
-                    ? 'var(--color-cyan)'
-                    : 'var(--color-tactical-blue)',
-                  color: (input.trim() || file) && !disabled && !isUploading ? 'var(--color-cyan)' : '#64748b',
-                  boxShadow: (input.trim() || file) ? '0 0 10px rgba(0,240,255,0.2)' : 'none',
+                    ? 'var(--color-primary)'
+                    : 'var(--color-background-soft)',
+                  color: (input.trim() || file) && !disabled && !isUploading ? 'white' : 'var(--color-text-muted)',
                 }}
-                title="Transmit"
+                title="Send message"
               >
                 {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
               </button>

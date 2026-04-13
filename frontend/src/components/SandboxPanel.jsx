@@ -1,48 +1,36 @@
-import { useMemo, useState } from "react";
-import { Play, TerminalSquare, Loader2, X, RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { Play, TerminalSquare, Loader2, X, RotateCcw, Shield } from "lucide-react";
  
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const ACCESS_TOKEN_KEY = "synapse_access_token";
 
-const STARTER_SNIPPETS = {
-  javascript: `const values = [3, 7, 11, 19];
+const STARTER_SNIPPET = `const values = [3, 7, 11, 19];
 const sum = values.reduce((acc, v) => acc + v, 0);
 
 console.log("Values:", values.join(", "));
 console.log("Sum:", sum);
-console.log("Average:", (sum / values.length).toFixed(2));`,
-  python: `values = [3, 7, 11, 19]
-total = sum(values)
-
-print("Values:", ", ".join(str(v) for v in values))
-print("Sum:", total)
-print("Average:", round(total / len(values), 2))`
-};
+console.log("Average:", (sum / values.length).toFixed(2));`;
 
 export default function SandboxPanel({ isOpen, onClose }) {
-  const [language, setLanguage] = useState("javascript");
-  const [code, setCode] = useState(STARTER_SNIPPETS.javascript);
+  const [code, setCode] = useState(STARTER_SNIPPET);
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
-
-  const placeholder = useMemo(() => STARTER_SNIPPETS[language], [language]);
-
-  const handleLanguageChange = (lang) => {
-    setLanguage(lang);
-    setCode((c) => c.trim() ? c : STARTER_SNIPPETS[lang]);
-    setOutput(""); setError("");
-  };
 
   const handleRun = async () => {
     if (!code.trim() || isRunning) return;
     setIsRunning(true); setOutput(""); setError("");
     try {
+      const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY) || "";
       const res = await fetch(`${API_URL}/api/sandbox`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language })
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify({ code, language: "javascript" })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Sandbox failed ${res.status}`);
@@ -57,7 +45,7 @@ export default function SandboxPanel({ isOpen, onClose }) {
   };
 
   const handleReset = () => {
-    setCode(STARTER_SNIPPETS[language]);
+    setCode(STARTER_SNIPPET);
     setOutput(""); setError("");
   };
 
@@ -69,7 +57,7 @@ export default function SandboxPanel({ isOpen, onClose }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ background: 'rgba(9,6,18,0.75)', backdropFilter: 'blur(12px)' }}
+          style={{ background: 'rgba(31, 45, 61, 0.75)', backdropFilter: 'blur(12px)' }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
@@ -77,60 +65,42 @@ export default function SandboxPanel({ isOpen, onClose }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: "spring", damping: 28, stiffness: 340 }}
-            className="w-full max-w-5xl flex flex-col overflow-hidden"
+            className="w-full max-w-5xl flex flex-col overflow-hidden rounded-2xl"
             style={{
               height: '80vh',
-              background: 'rgba(13,10,26,0.96)',
-              border: '1px solid rgba(168,85,247,0.18)',
-              borderRadius: '24px',
-              boxShadow: '0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(168,85,247,0.05)',
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-background-soft)',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.3)',
             }}
           >
-            {/* Header */}
             <div
               className="flex items-center gap-3 px-5 py-4"
               style={{
-                borderBottom: '1px solid rgba(168,85,247,0.08)',
-                background: 'rgba(22,17,46,0.6)',
+                borderBottom: '1px solid var(--color-background-soft)',
+                background: 'var(--color-surface-soft)',
               }}
             >
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(45,212,191,0.12)', border: '1px solid rgba(45,212,191,0.2)', color: '#2dd4bf' }}
+                style={{ background: 'var(--color-primary)15', border: '1px solid var(--color-primary)30', color: 'var(--color-primary)' }}
               >
                 <TerminalSquare size={17} />
               </div>
               <div>
-                <p className="text-sm font-semibold" style={{ color: '#f1e9ff' }}>Code Sandbox</p>
-                <p className="text-[10px]" style={{ color: '#6b5f8a' }}>Isolated backend runner — JavaScript & Python</p>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Code Sandbox</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <Shield size={10} style={{ color: 'var(--color-success)' }} />
+                  <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                    Docker-isolated JavaScript runner
+                  </p>
+                </div>
               </div>
 
               <div className="ml-auto flex items-center gap-2">
-                {/* Language tabs */}
-                <div
-                  className="flex rounded-xl p-0.5 gap-0.5"
-                  style={{ background: 'rgba(22,17,46,0.8)', border: '1px solid rgba(168,85,247,0.1)' }}
-                >
-                  {["javascript", "python"].map((lang) => (
-                    <button
-                      key={lang}
-                      onClick={() => handleLanguageChange(lang)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
-                      style={{
-                        background: language === lang ? 'rgba(168,85,247,0.2)' : 'transparent',
-                        border: language === lang ? '1px solid rgba(168,85,247,0.3)' : '1px solid transparent',
-                        color: language === lang ? '#c4a3ff' : '#6b5f8a',
-                      }}
-                    >
-                      {lang === "javascript" ? "JavaScript" : "Python"}
-                    </button>
-                  ))}
-                </div>
-
                 <button
                   onClick={handleReset}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl transition-all"
-                  style={{ background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.12)', color: '#6b5f8a' }}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl transition-all warm-card-hover"
+                  style={{ color: 'var(--color-text-muted)' }}
                   title="Reset"
                 >
                   <RotateCcw size={14} />
@@ -139,37 +109,31 @@ export default function SandboxPanel({ isOpen, onClose }) {
                 <button
                   onClick={onClose}
                   className="w-8 h-8 flex items-center justify-center rounded-xl transition-all"
-                  style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.15)', color: '#6b5f8a' }}
+                  style={{ background: 'var(--color-error)10', color: 'var(--color-text-muted)' }}
                   title="Close"
-                  onMouseEnter={e => e.currentTarget.style.color = '#f43f5e'}
-                  onMouseLeave={e => e.currentTarget.style.color = '#6b5f8a'}
                 >
                   <X size={14} />
                 </button>
               </div>
             </div>
 
-            {/* Body */}
             <div className="grid grid-cols-1 md:grid-cols-2 flex-1 min-h-0">
-              {/* Editor pane */}
               <div
                 className="flex flex-col min-h-0"
-                style={{ borderRight: '1px solid rgba(168,85,247,0.08)' }}
+                style={{ borderRight: '1px solid var(--color-background-soft)' }}
               >
                 <div
                   className="flex items-center justify-between px-4 py-2.5"
-                  style={{ borderBottom: '1px solid rgba(168,85,247,0.06)', background: 'rgba(22,17,46,0.3)' }}
+                  style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface-soft)' }}
                 >
-                  <span className="font-label text-[9px] tracking-widest" style={{ color: '#6b5f8a' }}>EDITOR</span>
+                  <span className="text-xs font-medium tracking-wide" style={{ color: 'var(--color-text-muted)' }}>EDITOR</span>
                   <button
                     onClick={handleRun}
                     disabled={isRunning || !code.trim()}
-                    className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 disabled:opacity-40"
+                    className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 disabled:opacity-40"
                     style={{
-                      background: 'linear-gradient(135deg, rgba(45,212,191,0.6), rgba(45,212,191,0.8))',
-                      border: '1px solid rgba(45,212,191,0.3)',
-                      color: '#0d0a1a',
-                      boxShadow: isRunning ? 'none' : '0 0 16px rgba(45,212,191,0.3)',
+                      background: 'var(--color-primary)',
+                      color: 'white',
                     }}
                   >
                     {isRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} fill="currentColor" />}
@@ -180,33 +144,32 @@ export default function SandboxPanel({ isOpen, onClose }) {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   spellCheck={false}
-                  placeholder={placeholder}
+                  placeholder="Write your JavaScript code here..."
                   className="flex-1 min-h-0 w-full p-5 outline-none resize-none text-sm leading-relaxed font-mono"
                   style={{
-                    background: 'rgba(9,6,18,0.8)',
-                    color: '#e2d9f3',
-                    caretColor: '#a855f7',
+                    background: 'var(--color-background)',
+                    color: 'var(--color-text-primary)',
+                    caretColor: 'var(--color-primary)',
                   }}
                 />
               </div>
 
-              {/* Output pane */}
               <div className="flex flex-col min-h-0">
                 <div
                   className="flex items-center justify-between px-4 py-2.5"
-                  style={{ borderBottom: '1px solid rgba(168,85,247,0.06)', background: 'rgba(22,17,46,0.3)' }}
+                  style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface-soft)' }}
                 >
-                  <span className="font-label text-[9px] tracking-widest" style={{ color: '#6b5f8a' }}>OUTPUT</span>
+                  <span className="text-xs font-medium tracking-wide" style={{ color: 'var(--color-text-muted)' }}>OUTPUT</span>
                   {error && (
-                    <span className="font-label text-[9px] tracking-widest" style={{ color: '#f43f5e' }}>ERROR</span>
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-error)' }}>ERROR</span>
                   )}
                 </div>
 
                 <div
                   className="flex-1 min-h-0 overflow-auto p-5 font-mono text-sm whitespace-pre-wrap leading-relaxed"
                   style={{
-                    background: 'rgba(9,6,18,0.9)',
-                    color: output ? '#86efac' : '#3d3360',
+                    background: 'var(--color-background)',
+                    color: output ? 'var(--color-success)' : 'var(--color-text-muted)',
                   }}
                 >
                   {output || "Run code to see output here..."}
@@ -214,16 +177,16 @@ export default function SandboxPanel({ isOpen, onClose }) {
 
                 {error && (
                   <div
-                    className="font-mono text-xs whitespace-pre-wrap p-4 leading-relaxed"
+                    className="font-mono text-sm whitespace-pre-wrap p-4 leading-relaxed"
                     style={{
-                      borderTop: '1px solid rgba(244,63,94,0.2)',
-                      background: 'rgba(244,63,94,0.06)',
-                      color: '#fda4af',
+                      borderTop: '1px solid var(--color-error)30',
+                      background: 'var(--color-error)10',
+                      color: 'var(--color-error)',
                       maxHeight: '140px',
                       overflowY: 'auto',
                     }}
                   >
-                    <span className="font-label text-[9px] block mb-1.5 tracking-widest" style={{ color: '#f43f5e' }}>ERROR</span>
+                    <span className="text-xs font-medium block mb-1.5" style={{ color: 'var(--color-error)' }}>ERROR</span>
                     {error}
                   </div>
                 )}
