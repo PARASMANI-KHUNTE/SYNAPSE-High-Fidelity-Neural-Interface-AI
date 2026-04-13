@@ -113,8 +113,9 @@ const sanitizeCode = (code, language) => {
     patterns.push(...pythonDangerousPatterns);
   }
 
+  const commentReplacement = (language && /py/i.test(language)) ? "# [BLOCKED]" : "// [BLOCKED]";
   for (const pattern of patterns) {
-    sanitized = sanitized.replace(pattern, "// [BLOCKED]");
+    sanitized = sanitized.replace(pattern, commentReplacement);
   }
 
   const commentsWithCode = [
@@ -136,9 +137,6 @@ const sanitizeCode = (code, language) => {
 const getLanguageConfig = (language) => {
   const key = String(language || "").toLowerCase();
   const configs = {
-    python: { ext: "py", command: process.platform === "win32" ? "python" : "python3" },
-    python3: { ext: "py", command: process.platform === "win32" ? "python" : "python3" },
-    py: { ext: "py", command: process.platform === "win32" ? "python" : "python3" },
     javascript: { ext: "js", command: "node" },
     js: { ext: "js", command: "node" },
     node: { ext: "js", command: "node" }
@@ -146,7 +144,7 @@ const getLanguageConfig = (language) => {
   return configs[key] || null;
 };
 
-const runSandboxFile = ({ command, filepath }) =>
+const runSandboxFile = ({ command, filepath, options = {} }) =>
   new Promise((resolve, reject) => {
     let timedOut = false;
 
@@ -160,7 +158,8 @@ const runSandboxFile = ({ command, filepath }) =>
         HOME: os.tmpdir(),
         TMPDIR: os.tmpdir(),
         TEMP: os.tmpdir(),
-        TMP: os.tmpdir()
+        TMP: os.tmpdir(),
+        ...(options.env || {})
       },
       windowsHide: true
     }, (error, stdout, stderr) => {
@@ -205,8 +204,8 @@ router.post("/", async (req, res) => {
     const langConfig = getLanguageConfig(language);
     if (!langConfig) {
       return res.status(400).json({
-        error: "Language not supported for execution",
-        supported: ["python", "python3", "javascript", "js", "node"]
+        error: "Only JavaScript is allowed and supported for execution",
+        supported: ["javascript", "js", "node"]
       });
     }
 
@@ -223,7 +222,8 @@ router.post("/", async (req, res) => {
 
     const result = await runSandboxFile({
       command: langConfig.command,
-      filepath
+      filepath,
+      options: { env: { PATH: process.env.SYSTEMROOT || "" } }
     });
 
     const output = result.stdout.length > MAX_OUTPUT_SIZE
@@ -249,7 +249,7 @@ router.post("/", async (req, res) => {
 router.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    supported: ["python", "javascript"],
+    supported: ["javascript"],
     timestamp: new Date().toISOString()
   });
 });

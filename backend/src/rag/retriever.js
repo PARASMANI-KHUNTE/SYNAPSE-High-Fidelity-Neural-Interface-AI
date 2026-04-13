@@ -132,6 +132,10 @@ export const getRelevantDocs = async (query) => {
   const topK = parseInt(process.env.RAG_TOP_K || "6", 10);
   const maxScore = parseFloat(process.env.RAG_MAX_SCORE || "1.0");
   const minScore = parseFloat(process.env.RAG_MIN_SCORE || "0.0");
+  const queryTerms = tokenize(query);
+  const minLexicalScore = parseFloat(
+    process.env.RAG_MIN_LEXICAL_SCORE || (queryTerms.length >= 3 ? "0.1" : "0")
+  );
 
   console.log(`\n[RAG] Query: "${query.substring(0, 100)}"`);
   console.log(`[RAG] Model: ${embeddingModel} | TopK: ${topK} | MinScore: ${minScore} | MaxScore: ${maxScore}`);
@@ -143,16 +147,18 @@ export const getRelevantDocs = async (query) => {
     return "";
   }
 
-  const relevant = results.filter(([, score]) => {
+  const relevant = results.filter(([doc, score]) => {
     const normalized = normalizeScore(score);
-    return normalized >= minScore && normalized <= maxScore;
+    const lexicalScore = scoreChunk(queryTerms, doc.pageContent);
+    return normalized >= minScore && normalized <= maxScore && lexicalScore >= minLexicalScore;
   });
 
   results.slice(0, topK).forEach(([doc, score], index) => {
     const normalized = normalizeScore(score);
-    const passed = normalized >= minScore && normalized <= maxScore;
+    const lexicalScore = scoreChunk(queryTerms, doc.pageContent);
+    const passed = normalized >= minScore && normalized <= maxScore && lexicalScore >= minLexicalScore;
     const tag = passed ? "PASS" : "SKIP";
-    console.log(`  [${tag}] Result ${index + 1} | Score: ${normalized.toFixed(4)} | ${doc.pageContent.substring(0, 60).replace(/\n/g, " ")}...`);
+    console.log(`  [${tag}] Result ${index + 1} | Score: ${normalized.toFixed(4)} | Lex: ${lexicalScore.toFixed(4)} | ${doc.pageContent.substring(0, 60).replace(/\n/g, " ")}...`);
   });
 
   if (!relevant.length) {

@@ -1,13 +1,30 @@
 const getOllamaModel = (hasImages) =>
   hasImages ? (process.env.OLLAMA_VISION_MODEL || "llava") : (process.env.OLLAMA_MODEL || "llama3");
 
-const getOllamaBaseUrl = () => process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+const getOllamaBaseUrl = () => process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 
 const OLLAMA_TIMEOUT = parseInt(process.env.OLLAMA_TIMEOUT) || 120000;
 const MAX_RETRIES = parseInt(process.env.OLLAMA_MAX_RETRIES) || 3;
 const RETRY_DELAY = parseInt(process.env.OLLAMA_RETRY_DELAY) || 2000;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const formatOllamaError = (err, baseUrl = getOllamaBaseUrl()) => {
+  const cause = err?.cause;
+  if (!cause) {
+    return `${err.message} (baseUrl: ${baseUrl})`;
+  }
+
+  const details = [
+    cause.code || cause.errno,
+    cause.address ? `address=${cause.address}` : null,
+    cause.port ? `port=${cause.port}` : null
+  ].filter(Boolean).join(", ");
+
+  return details
+    ? `${err.message} (${details}, baseUrl: ${baseUrl})`
+    : `${err.message} (baseUrl: ${baseUrl})`;
+};
 
 const fetchWithTimeout = async (url, options, timeout = OLLAMA_TIMEOUT) => {
   const controller = new AbortController();
@@ -58,7 +75,7 @@ export async function generateResponseStream(messages, onChunk, abortSignal, mod
           break;
         }
 
-        console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+        console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, formatOllamaError(err));
         if (attempt < MAX_RETRIES) {
           const delay = RETRY_DELAY * attempt;
           console.log(`Retrying in ${delay}ms...`);
@@ -114,7 +131,7 @@ export const generateResponse = async (messages, modelOverride = null) => {
       return data.message.content;
     } catch (err) {
       lastError = err;
-      console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+      console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, formatOllamaError(err));
 
       if (err.name === "AbortError") throw err;
 
