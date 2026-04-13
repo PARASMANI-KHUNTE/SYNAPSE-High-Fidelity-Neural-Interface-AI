@@ -5,6 +5,7 @@ frontend/node_modules/
 
 # Environment
 .env
+/*.env.local
 backend/.env
 frontend/.env.local
 
@@ -14,8 +15,11 @@ backend/dist/
 frontend/dist/
 
 # Uploads & Models
-backend/uploads/*
-!backend/uploads/.gitkeep
+backend/uploads/
+backend/vectorstore/
+backend/faiss.index
+backend/docstore.json
+backend/temp/
 backend/models/*
 
 # Debug/Logs
