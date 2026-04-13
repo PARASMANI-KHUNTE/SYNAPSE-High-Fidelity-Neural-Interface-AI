@@ -29,6 +29,15 @@ export const isInternalHostname = (hostname = "") => {
   }
 
   const ipVersion = net.isIP(normalized);
+  const mappedV4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mappedV4) {
+    const ipv4 = mappedV4[1];
+    if (!net.isIPv4(ipv4)) {
+      return true;
+    }
+    return PRIVATE_V4_PATTERNS.some((pattern) => pattern.test(ipv4));
+  }
+
   if (ipVersion === 4) {
     return PRIVATE_V4_PATTERNS.some((pattern) => pattern.test(normalized));
   }

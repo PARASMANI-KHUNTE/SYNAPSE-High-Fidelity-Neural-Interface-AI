@@ -13,8 +13,9 @@ const assertPlainObject = (value, label) => {
 };
 
 const assertSafeObjectKeys = (obj) => {
+  const bannedKeys = new Set(["__proto__", "constructor", "prototype"]);
   for (const key of Object.keys(obj || {})) {
-    if (key.startsWith("$") || key.includes(".")) {
+    if (key.startsWith("$") || key.includes(".") || bannedKeys.has(key)) {
       throw new Error("Invalid condition key");
     }
   }

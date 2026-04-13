@@ -154,7 +154,14 @@ export const transcribeAudio = async (filePath) => {
     execFile("python", [transcribeScriptPath, filePath], {
       timeout: 60000,
       windowsHide: true,
-      env: { ...process.env, PYTHONUTF8: "1" }
+      env: {
+        PATH: process.env.PATH || "",
+        PYTHONUTF8: "1",
+        HOME: process.env.HOME || process.cwd(),
+        TMPDIR: process.env.TMPDIR || process.env.TMP || process.cwd(),
+        TEMP: process.env.TEMP || process.env.TMP || process.cwd(),
+        TMP: process.env.TMP || process.cwd()
+      }
     }, (error, stdout, stderr) => {
       if (error) {
         console.error("Transcription error:", stderr || error.message);

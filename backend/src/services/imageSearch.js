@@ -7,6 +7,7 @@ const MAX_IMAGES = 4;
 const MAX_RETRIES = 2;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const TRUSTED_IMAGE_HOSTS = ["bing.com", "mm.bing.net", "googleusercontent.com", "gstatic.com"];
 
 const isValidImageUrl = (url) => {
   if (!url || typeof url !== "string") return false;
@@ -14,10 +15,6 @@ const isValidImageUrl = (url) => {
   const trimmed = url.trim();
   
   if (trimmed.length < 10 || trimmed.length > 500) return false;
-
-  if (trimmed.toLowerCase().startsWith("data:") || trimmed.toLowerCase().startsWith("blob:") || trimmed.toLowerCase().startsWith("javascript:")) {
-    return false;
-  }
 
   let parsed;
   try {
@@ -31,7 +28,12 @@ const isValidImageUrl = (url) => {
 
   const pathname = parsed.pathname.toLowerCase();
   const validExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"];
-  return validExtensions.some(ext => pathname.endsWith(ext));
+  if (validExtensions.some(ext => pathname.endsWith(ext))) {
+    return true;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  return TRUSTED_IMAGE_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
 };
 
 export const searchReferenceImages = async (query) => {
