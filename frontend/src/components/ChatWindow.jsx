@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
-import StatusRing from "./StatusRing";
-import { ChevronDown, Sparkles, Cpu, Zap, Terminal } from "lucide-react";
+import { CheckCircle2, Loader2, ShieldAlert, XCircle, ChevronDown, Sparkles, Cpu, Zap, Terminal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 function FeatureCard({ icon: _Icon, title, desc, delay }) {
@@ -25,6 +24,23 @@ function FeatureCard({ icon: _Icon, title, desc, delay }) {
   );
 }
 
+const resolveStatus = ({ isTyping, pendingConfirmation, agentEvents = [] }) => {
+  const latest = agentEvents[0];
+  if (pendingConfirmation) {
+    return { label: "Awaiting confirmation", color: "var(--color-warning)", Icon: ShieldAlert };
+  }
+  if (latest?.type === "error") {
+    return { label: "Error", color: "var(--color-error)", Icon: XCircle };
+  }
+  if (latest?.type === "result" || latest?.type === "done") {
+    return { label: "Complete", color: "var(--color-success)", Icon: CheckCircle2 };
+  }
+  if (isTyping || latest?.type === "start" || latest?.type === "thinking") {
+    return { label: "Thinking", color: "var(--color-primary)", Icon: Loader2 };
+  }
+  return { label: "Ready", color: "var(--color-info)", Icon: CheckCircle2 };
+};
+
 export default function ChatWindow({
   messages, isTyping, isWaitingReply, isSpeaking, operatorName, suggestion,
   onSendMessage, onStopMessage, onStopAudio, onFeedback, onRefine, onSuggest, clearSuggestion,
@@ -33,7 +49,7 @@ export default function ChatWindow({
   onOpenSandbox,
   agentEvents = [],
   pendingAgentConfirmation = null,
-  showStatusRing = true
+  pendingConfirmation = null
 }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -75,31 +91,34 @@ export default function ChatWindow({
   }, [messages, isTyping, isWaitingReply, scrollToBottom]);
 
   const hasContent = messages.length > 0;
+  const chatStatus = resolveStatus({ isTyping, pendingConfirmation: pendingConfirmation || pendingAgentConfirmation, agentEvents });
 
   return (
     <div className="flex flex-col h-full relative w-full overflow-hidden">
-      {showStatusRing && (
-        <StatusRing
-          isTyping={isTyping}
-          pendingConfirmation={pendingAgentConfirmation}
-          agentEvents={agentEvents}
-        />
-      )}
-
       <div className="flex flex-col h-full w-full relative">
         <div className="flex items-center gap-4 px-6 py-3" style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface)' }}>
           <div className="flex items-center gap-2">
-            <div 
-              className="w-2.5 h-2.5 rounded-full" 
+            <motion.div 
+              className="w-7 h-7 rounded-full flex items-center justify-center"
               style={{ 
-                background: isSpeaking ? 'var(--color-accent)' : 'var(--color-success)',
-                boxShadow: isSpeaking ? `0 0 8px var(--color-accent)` : 'none',
-                transition: 'all 0.3s ease'
-              }} 
-            />
-            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-              {isSpeaking ? 'Speaking' : 'Ready'}
-            </span>
+                background: `${chatStatus.color}15`,
+                border: `1px solid ${chatStatus.color}30`
+              }}
+              animate={chatStatus.label === "Thinking" ? { rotate: 360 } : {}}
+              transition={chatStatus.label === "Thinking" ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+            >
+              <chatStatus.Icon size={14} className={chatStatus.label === "Thinking" ? "animate-spin" : ""} style={{ color: chatStatus.color }} />
+            </motion.div>
+            <div className="flex flex-col">
+              <span className="text-xs font-medium" style={{ color: chatStatus.color }}>
+                {chatStatus.label}
+              </span>
+              {isSpeaking && (
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Speaking
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="ml-auto flex items-center gap-3">

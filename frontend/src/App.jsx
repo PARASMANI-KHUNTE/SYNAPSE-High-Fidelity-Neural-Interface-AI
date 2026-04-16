@@ -3,6 +3,8 @@ import { io } from "socket.io-client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import SandboxPanel from "./components/SandboxPanel";
+import AgentConsole from "./components/AgentConsole";
+import TriggerPanel from "./components/TriggerPanel";
   
 import { motion, AnimatePresence } from "framer-motion";
 import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff } from "lucide-react";
@@ -155,6 +157,7 @@ function App() {
   const [memoryFacts, setMemoryFacts] = useState([]);
   const [memoryProfile, setMemoryProfile] = useState(null);
   const [memoryEpisodes, setMemoryEpisodes] = useState([]);
+  const [triggerAlerts, setTriggerAlerts] = useState([]);
 
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) || "");
   const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem(REFRESH_TOKEN_KEY) || "");
@@ -185,6 +188,7 @@ function App() {
   const assistantMessageIdRef = useRef(null);
   const pendingAssistantChunkRef = useRef("");
   const chunkFlushTimerRef = useRef(null);
+  const suggestDebounceRef = useRef(null);
 
   useEffect(() => { userIdRef.current = authUser?.id || ""; }, [authUser]);
   useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
@@ -386,14 +390,31 @@ function App() {
         await loadCurrentUser(accessToken);
         return;
       }
-      const refreshed = await tryRefreshSession();
-      if (!refreshed && !cancelled) {
-        setAuthUser(null);
+      const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (!rt) {
+        if (!cancelled) setAuthUser(null);
+        return;
+      }
+      try {
+        const res = await fetch(`${SOCKET_URL}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: rt })
+        });
+        if (!res.ok) throw new Error("Refresh failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setSessionTokens(data.accessToken, data.refreshToken);
+          await loadCurrentUser(data.accessToken);
+        }
+      } catch {
+        if (!cancelled) setAuthUser(null);
       }
     };
     void boot();
     return () => { cancelled = true; };
-  }, [accessToken, tryRefreshSession, loadCurrentUser]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once on mount
 
   useEffect(() => {
     if (!accessToken) return undefined;
@@ -604,6 +625,11 @@ function App() {
           }
         }
       });
+
+      socketInstance.on("trigger:alert", (data) => {
+        if (!mountedRef.current) return;
+        setTriggerAlerts(prev => [...prev.slice(-20), { ...data, id: `trigger-${Date.now()}` }]);
+      });
     };
 
     setupListenersFnRef.current = setupListeners;
@@ -691,8 +717,14 @@ function App() {
   }, [activeChatId]);
 
   const handleSuggest = useCallback((input) => {
-    if (socketRef.current?.connected && input?.length > 5)
-      socketRef.current.emit("chat:suggest", { input: input.substring(0, 500) });
+    if (!socketRef.current?.connected || !input || input.length <= 5) return;
+    // Debounce: wait 300ms after last keystroke before emitting
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    suggestDebounceRef.current = setTimeout(() => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("chat:suggest", { input: input.substring(0, 500) });
+      }
+    }, 300);
   }, []);
 
   const handleClearSuggestion = useCallback(() => setSuggestion(""), []);
@@ -708,15 +740,21 @@ function App() {
     const presets = {
       focus: {
         memory: false,
-        statusRing: true
+        statusRing: true,
+        agentConsole: false,
+        sandbox: false
       },
       dev: {
-        memory: false,
-        statusRing: true
+        memory: true,
+        statusRing: true,
+        agentConsole: true,
+        sandbox: true
       },
       mission: {
         memory: true,
-        statusRing: true
+        statusRing: true,
+        agentConsole: true,
+        sandbox: false
       }
     };
 
@@ -727,7 +765,10 @@ function App() {
 
     setActiveLayoutPreset(preset);
     setPanelPrefs(nextPrefs);
-  }, []);
+    if (nextPrefs.sandbox === false && isSandboxOpen) {
+      setIsSandboxOpen(false);
+    }
+  }, [isSandboxOpen]);
 
   const handleRunAgentTool = useCallback((tool, params) => {
     if (!socketRef.current?.connected) return;
@@ -976,9 +1017,25 @@ function App() {
             clearSuggestion={handleClearSuggestion}
             agentEvents={agentEvents}
             pendingAgentConfirmation={pendingAgentConfirmation}
-            showStatusRing={panelPrefs.statusRing}
           />
-        </main>
+
+        <AnimatePresence>
+          {panelPrefs.agentConsole && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="absolute right-4 bottom-24 w-96 z-30"
+            >
+              <AgentConsole
+                isOpen={true}
+                agentEvents={agentEvents}
+                pendingConfirmation={pendingAgentConfirmation}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
 
         <SandboxPanel isOpen={isSandboxOpen} onClose={() => setIsSandboxOpen(false)} />
       </div>

@@ -14,6 +14,7 @@ import { upsertEpisodeFromChat } from "../memory/episodicMemory.js";
 import { rememberFacts, syncProfileFacts } from "../memory/profileMemory.js";
 import { queryMemoryContext } from "../memory/memoryRouter.js";
 import { classifyQuery, shouldUseRAG, resolveModelPreference } from "./chatRouter.js";
+import { generalCache, searchCache, getCacheKey } from "./cache.js";
 import config from "../config/env.js";
 
 const SEARCH_HINT_PATTERNS = [
@@ -550,10 +551,16 @@ export const processStandardChatTurn = async ({
 
   let ragContext = "";
   if (isRAGRequired) {
-    try {
-      ragContext = await getRelevantDocs(trimmedMessage);
-    } catch (ragErr) {
-      console.warn("RAG retrieval failed during socket chat:", ragErr.message);
+    const ragKey = getCacheKey("rag", trimmedMessage);
+    if (generalCache.has(ragKey)) {
+      ragContext = generalCache.get(ragKey);
+    } else {
+      try {
+        ragContext = await getRelevantDocs(trimmedMessage);
+        if (ragContext) generalCache.set(ragKey, ragContext);
+      } catch (ragErr) {
+        console.warn("RAG retrieval failed during socket chat:", ragErr.message);
+      }
     }
   }
 
@@ -566,11 +573,17 @@ export const processStandardChatTurn = async ({
     actualFileType,
     hasImages
   })) {
-    socket.emit("chat:reply:chunk", { chunk: "Searching the web for real-time info..." });
-    const searchJob = await addChatJob({ type: "web-search", payload: { query: trimmedMessage } });
-    const results = await searchJob.waitUntilFinished();
-    if (results && results.length > 0) {
-      searchContext = results.map((result) => `${result.title}: ${result.snippet}`).join("\n\n");
+    const searchKey = getCacheKey("search", trimmedMessage);
+    if (searchCache.has(searchKey)) {
+      searchContext = searchCache.get(searchKey);
+    } else {
+      socket.emit("chat:reply:chunk", { chunk: "Searching the web for real-time info..." });
+      const searchJob = await addChatJob({ type: "web-search", payload: { query: trimmedMessage } });
+      const results = await searchJob.waitUntilFinished();
+      if (results && results.length > 0) {
+        searchContext = results.map((result) => `${result.title}: ${result.snippet}`).join("\n\n");
+        searchCache.set(searchKey, searchContext);
+      }
     }
   }
 

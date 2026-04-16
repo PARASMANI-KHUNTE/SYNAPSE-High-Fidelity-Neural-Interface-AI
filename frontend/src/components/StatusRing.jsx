@@ -22,8 +22,8 @@ export default function StatusRing({ isTyping, pendingConfirmation, agentEvents 
   const Icon = status.Icon;
 
   return (
-    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[34] hidden xl:block pointer-events-none">
-      <div className="relative w-20 h-20 flex items-center justify-center">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[34] hidden xl:block pointer-events-none">
+      <div className="relative w-12 h-12 flex items-center justify-center">
         <div
           className="absolute inset-0 rounded-full"
           style={{
@@ -33,18 +33,15 @@ export default function StatusRing({ isTyping, pendingConfirmation, agentEvents 
           }}
         />
         <div
-          className="absolute inset-[8px] rounded-full"
+          className="absolute inset-[6px] rounded-full"
           style={{ border: '1px dashed', borderColor: `${status.color}40` }}
         />
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center soft-shadow"
+          className="w-6 h-6 rounded-full flex items-center justify-center soft-shadow"
           style={{ background: "var(--color-surface)", color: status.color }}
         >
-          <Icon size={18} className={status.label === "Thinking" ? "animate-spin" : ""} />
+          <Icon size={12} className={status.label === "Thinking" ? "animate-spin" : ""} />
         </div>
-      </div>
-      <div className="mt-2 text-center text-xs font-medium" style={{ color: status.color }}>
-        {status.label}
       </div>
     </div>
   );

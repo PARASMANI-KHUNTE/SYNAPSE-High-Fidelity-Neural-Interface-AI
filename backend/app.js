@@ -6,14 +6,20 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
+import helmet from "helmet";
+import compression from "compression";
 import config from "./src/config/env.js";
 import logger from "./src/utils/logger.js";
+import { requestLogger } from "./src/middleware/loggerMiddleware.js";
 import { connectDB } from "./src/config/database.js";
 import { initSocket } from "./src/config/socket.js";
 import { attachListeners } from "./src/sockets/index.js";
 import { initWorker } from "./src/queues/worker.js";
+import "./src/utils/cleanup.js";
 import { errorHandler, notFoundHandler } from "./src/middleware/errorHandler.js";
 import { getConfiguredModels } from "./src/services/chatRouter.js";
+import { prewarmModel } from "./src/services/llm.js";
+import { getQueueMetrics } from "./src/queues/jobOrchestrator.js";
 
 import chatRoutes from "./src/routes/chat.js";
 import memoryRoutes from "./src/routes/memory.js";
@@ -33,6 +39,9 @@ if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads", { recursive: true });
 }
 
+app.use(helmet({ crossOriginResourcePolicy: false })); // allow static uploads
+app.use(compression());
+app.use(requestLogger);
 app.use(cors({
   origin: config.cors.origins,
   methods: ["GET", "POST"],
@@ -112,6 +121,25 @@ app.use("/uploads", (req, res, next) => {
 
 connectDB();
 
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", uptime: process.uptime() });
+});
+
+app.get("/metrics", (req, res) => {
+  const memory = process.memoryUsage();
+  res.status(200).json({
+    status: "OK",
+    uptime: `${Math.round(process.uptime())}s`,
+    memory: {
+      rss: `${Math.round(memory.rss / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)} MB`
+    },
+    sockets: io ? io.engine?.clientsCount : 0,
+    queues: getQueueMetrics()
+  });
+});
+
 const io = initSocket(httpServer);
 attachListeners(io);
 
@@ -142,10 +170,33 @@ export const startServer = () => {
 
   httpServer.listen(config.app.port, () => {
     logger.info({ port: config.app.port, env: config.app.nodeEnv }, "SYNAPSE server running");
+    // Asynchronously pre-warm the lightweight casual model so first response is fast
+    prewarmModel(config.ollama.model || "llama3.2:3b");
   });
   serverStarted = true;
   return httpServer;
 };
+
+// Graceful shutdown on SIGTERM (e.g. Docker stop, PM2 restart)
+const gracefulShutdown = async (signal) => {
+  logger.info(`${signal} received – beginning graceful shutdown`);
+  httpServer.close(async () => {
+    try {
+      const mongoose = (await import("mongoose")).default;
+      await mongoose.connection.close();
+      logger.info("MongoDB connection closed");
+    } catch (err) {
+      logger.warn({ err }, "Error closing MongoDB");
+    }
+    logger.info("Shutdown complete");
+    process.exit(0);
+  });
+  // Force exit if drain takes too long
+  setTimeout(() => process.exit(1), 10000);
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 

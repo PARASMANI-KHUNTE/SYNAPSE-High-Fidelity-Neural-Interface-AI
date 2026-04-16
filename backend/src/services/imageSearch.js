@@ -7,7 +7,11 @@ const MAX_IMAGES = 4;
 const MAX_RETRIES = 2;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const TRUSTED_IMAGE_HOSTS = ["bing.com", "mm.bing.net", "googleusercontent.com", "gstatic.com"];
+const TRUSTED_IMAGE_HOSTS = [
+  "bing.com", "mm.bing.net", "th.bing.com",
+  "googleusercontent.com", "gstatic.com",
+  "wikimedia.org", "wikipedia.org"
+];
 
 const isValidImageUrl = (url) => {
   if (!url || typeof url !== "string") return false;
@@ -32,6 +36,7 @@ const isValidImageUrl = (url) => {
     return true;
   }
 
+  // Trusted hosts: accept even extensionless URLs as they serve dynamic images
   const host = parsed.hostname.toLowerCase();
   return TRUSTED_IMAGE_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
 };
@@ -82,9 +87,13 @@ export const searchReferenceImages = async (query) => {
             try {
               const meta = JSON.parse(mAttr);
               
-              if (meta.murl && isValidImageUrl(meta.murl) && !seenUrls.has(meta.murl)) {
-                seenUrls.add(meta.murl);
-                imageUrls.push(meta.murl);
+              // Prefer Bing's own thumbnail CDN (turl) — always accessible, no hotlinking issues
+              // Fall back to murl (source image) only if turl missing
+              const imgUrl = meta.turl || meta.murl;
+              
+              if (imgUrl && isValidImageUrl(imgUrl) && !seenUrls.has(imgUrl)) {
+                seenUrls.add(imgUrl);
+                imageUrls.push(imgUrl);
               }
             } catch (parseErr) {
               // Invalid JSON in m attribute, skip
@@ -112,12 +121,8 @@ export const searchReferenceImages = async (query) => {
         });
       }
 
-      const validatedUrls = imageUrls.filter(url => {
-        if (!isValidImageUrl(url)) return false;
-        
-        const ext = url.toLowerCase().split(".").pop().split("?")[0];
-        return ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
-      });
+      // isValidImageUrl already checks extensions AND trusted hosts — no double filter needed
+      const validatedUrls = imageUrls.filter(isValidImageUrl);
 
       console.log(`✅ Found ${validatedUrls.length} image results for query.`);
       return validatedUrls;

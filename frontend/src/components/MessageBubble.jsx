@@ -212,7 +212,7 @@ const ImageWithFallback = ({ src, alt, className, onError, loadErrors }) => {
       </div>
     );
   }
-  return <img src={src} alt={alt || "media"} className={clsx(className, "rounded-xl")} onError={handleError} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
+  return <img src={src} alt={alt || "media"} className={clsx(className, "rounded-xl")} onError={handleError} loading="lazy" decoding="async" referrerPolicy="no-referrer-when-downgrade" crossOrigin="anonymous" />;
 };
 
 export default function MessageBubble({

@@ -77,7 +77,7 @@ export async function generateResponseStream(messages, onChunk, abortSignal, mod
 
         console.warn(`Ollama attempt ${attempt}/${MAX_RETRIES} failed:`, formatOllamaError(err));
         if (attempt < MAX_RETRIES) {
-          const delay = RETRY_DELAY * attempt;
+          const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
           console.log(`Retrying in ${delay}ms...`);
           await sleep(delay);
         }
@@ -112,6 +112,7 @@ export const generateResponse = async (messages, modelOverride = null) => {
             model,
             messages: messages.map(m => ({ role: m.role, content: m.content, ...(m.images ? { images: m.images } : {}) })),
             stream: false,
+            keep_alive: "5m", // Automatically unload model after 5 idle minutes
             options: { num_ctx: 4096, temperature: 0.1 }
           })
         },
@@ -136,7 +137,7 @@ export const generateResponse = async (messages, modelOverride = null) => {
       if (err.name === "AbortError") throw err;
 
       if (attempt < MAX_RETRIES) {
-        const delay = RETRY_DELAY * attempt;
+        const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
         console.log(`Retrying in ${delay}ms...`);
         await sleep(delay);
       }
@@ -174,6 +175,7 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
         model,
         messages: safeMessages,
         stream: true,
+        keep_alive: "5m", // Automatic VRAM recycling
         options: { num_ctx: 4096, temperature: 0.1 }
       })
     },
@@ -307,4 +309,20 @@ export const checkOllamaHealth = async () => {
   } catch (err) {
     return { healthy: false, error: err.message };
   }
+};
+
+export const prewarmModel = (modelName) => {
+  const baseUrl = getOllamaBaseUrl();
+  console.log(`Pre-warming model asynchronously: ${modelName}`);
+  fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: modelName,
+      messages: [{ role: "user", content: "initialize" }],
+      stream: false,
+      keep_alive: "4h",
+      options: { num_predict: 2 }
+    })
+  }).catch((err) => console.log(`Prewarming failed: ${err.message}`));
 };

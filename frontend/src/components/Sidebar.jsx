@@ -5,7 +5,9 @@ import MemoryPanel from './MemoryPanel';
 
 const WINDOW_OPTIONS = [
   { key: "memory", label: "Memory" },
-  { key: "statusRing", label: "Status Ring" }
+  { key: "statusRing", label: "Status Ring" },
+  { key: "agentConsole", label: "Agent Console" },
+  { key: "sandbox", label: "Sandbox" }
 ];
 
 const LAYOUT_PRESETS = [

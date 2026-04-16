@@ -204,12 +204,20 @@ export default function InputBar({
     }
     recognitionRef.current = null;
     setLiveTranscript("");
-    setIsRecording(false);
   }, []);
 
   const toggleRecording = useCallback(async () => {
     if (isRecording) {
-      stopRecording();
+      if (recognitionRef.current && recognitionRef.current.state !== "inactive") {
+        recognitionRef.current.stop();
+      }
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+        speechRecognitionRef.current = null;
+      }
+      if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
+      setLiveTranscript("");
+      setIsRecording(false);
       return;
     }
     
