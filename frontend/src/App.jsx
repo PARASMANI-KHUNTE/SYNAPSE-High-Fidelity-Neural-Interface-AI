@@ -3,8 +3,6 @@ import { io } from "socket.io-client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import SandboxPanel from "./components/SandboxPanel";
-import AgentDebugPanel from "./components/AgentDebugPanel";
-import MemoryPanel from "./components/MemoryPanel";
   
 import { motion, AnimatePresence } from "framer-motion";
 import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff } from "lucide-react";
@@ -126,13 +124,11 @@ function App() {
       const saved = JSON.parse(localStorage.getItem("synapse_panel_prefs") || "{}");
       return {
         memory: saved.memory !== false,
-        console: saved.console !== false,
         statusRing: saved.statusRing !== false
       };
     } catch {
       return {
         memory: true,
-        console: true,
         statusRing: true
       };
     }
@@ -159,7 +155,6 @@ function App() {
   const [memoryFacts, setMemoryFacts] = useState([]);
   const [memoryProfile, setMemoryProfile] = useState(null);
   const [memoryEpisodes, setMemoryEpisodes] = useState([]);
-  const hasRightDockPanels = panelPrefs.memory || panelPrefs.console;
 
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) || "");
   const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem(REFRESH_TOKEN_KEY) || "");
@@ -171,6 +166,7 @@ function App() {
   const [authError, setAuthError] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const socketRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
@@ -711,17 +707,14 @@ function App() {
     const presets = {
       focus: {
         memory: false,
-        console: false,
         statusRing: true
       },
       dev: {
         memory: false,
-        console: true,
         statusRing: true
       },
       mission: {
         memory: true,
-        console: true,
         statusRing: true
       }
     };
@@ -951,6 +944,12 @@ function App() {
           onTogglePanel={handleTogglePanel}
           activeLayoutPreset={activeLayoutPreset}
           onApplyLayoutPreset={handleApplyLayoutPreset}
+          memoryFacts={memoryFacts}
+          memoryEpisodes={memoryEpisodes}
+          memoryProfile={memoryProfile}
+          isConnected={isConnected}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(c => !c)}
         />
 
         {/* Main content — flexible center column */}
@@ -979,33 +978,6 @@ function App() {
             showStatusRing={panelPrefs.statusRing}
           />
         </main>
-
-        {/* Right Sidebar — strictly for auxiliary panels */}
-        {hasRightDockPanels && (
-          <aside className="w-[320px] shrink-0 h-full hidden lg:flex flex-col gap-3 overflow-y-auto hide-scrollbar relative z-10 p-3" style={{ background: 'var(--color-sand)', borderLeft: '1px solid var(--color-warm-beige)' }}>
-            {panelPrefs.memory && (
-              <MemoryPanel
-                facts={memoryFacts}
-                episodes={memoryEpisodes}
-                profile={memoryProfile}
-                isConnected={isConnected}
-              />
-            )}
-            <div className="flex-1 min-h-[20px]" />
-            {panelPrefs.console && (
-              <AgentDebugPanel
-                isConnected={isConnected}
-                tools={agentTools}
-                events={agentEvents}
-                pendingConfirmation={pendingAgentConfirmation}
-                onRunTool={handleRunAgentTool}
-                onConfirm={handleConfirmAgentTool}
-                onCancel={handleCancelAgentTool}
-                onClearEvents={handleClearAgentEvents}
-              />
-            )}
-          </aside>
-        )}
 
         <SandboxPanel isOpen={isSandboxOpen} onClose={() => setIsSandboxOpen(false)} />
       </div>

@@ -204,7 +204,7 @@ const ImageWithFallback = ({ src, alt, className, onError, loadErrors }) => {
   const handleError = useCallback(() => { setImgErr(true); onError?.(src); }, [src, onError]);
   if (hasError || imgErr || !src) {
     return (
-      <div className={clsx(className, "flex items-center justify-center rounded-xl")} style={{ background: 'var(--color-surface-soft)', border: '1px solid var(--color-background-soft)' }}>
+      <div className="flex items-center justify-center rounded-xl" style={{ background: 'var(--color-surface-soft)', border: '1px solid var(--color-background-soft)', width: '200px', height: '200px' }}>
         <div className="text-center">
           <ImageOff size={20} className="mx-auto mb-1" style={{ color: 'var(--color-text-muted)' }} />
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Image unavailable</span>

@@ -112,7 +112,7 @@ export const generateResponse = async (messages, modelOverride = null) => {
             model,
             messages: messages.map(m => ({ role: m.role, content: m.content, ...(m.images ? { images: m.images } : {}) })),
             stream: false,
-            options: { num_ctx: 16384, temperature: 0.7 }
+            options: { num_ctx: 4096, temperature: 0.1 }
           })
         },
         OLLAMA_TIMEOUT
@@ -174,7 +174,7 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
         model,
         messages: safeMessages,
         stream: true,
-        options: { num_ctx: 16384, temperature: 0.7 }
+        options: { num_ctx: 4096, temperature: 0.1 }
       })
     },
     OLLAMA_TIMEOUT
