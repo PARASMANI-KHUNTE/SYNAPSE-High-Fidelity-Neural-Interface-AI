@@ -38,6 +38,41 @@
 
 ---
 
+## 📈 Graphs & Flowcharts
+
+### System Overview (Flowchart)
+
+```mermaid
+flowchart LR
+  U[User] -->|Browser| FE[Frontend (React/Vite)]
+  FE -->|Socket.IO + REST| BE[Backend (Express/Socket.IO)]
+  BE -->|Mongoose| MDB[(MongoDB)]
+  BE -->|HTTP| OLL[Ollama :11434]
+  BE -->|FAISS files| VS[(Vectorstore)]
+  BE -->|uploads/*| FS[(Local Disk)]
+  BE -->|Public fetch/search| WEB[(Internet)]
+```
+
+### Standard Chat (Streaming) — Sequence
+
+```mermaid
+sequenceDiagram
+  participant FE as Frontend
+  participant BE as Backend
+  participant DB as MongoDB
+  participant O as Ollama
+
+  FE->>BE: chat:message (Socket.IO)
+  BE->>DB: persist user message
+  BE->>O: /api/chat (stream)
+  loop token stream
+    O-->>BE: chunks
+    BE-->>FE: chat:reply:chunk
+  end
+  BE->>DB: persist assistant message
+  BE-->>FE: chat:reply:end
+```
+
 ## ⚡ Multi-Model Deployment Guide
 
 SYNAPSE is optimized for systems with **6GB+ VRAM (e.g., RTX 4050)**.
@@ -104,6 +139,7 @@ Tests: *Integrity, OOD Rejection, Context Override, Prompt Strength, Relevance F
 
 - Current implementation status and progress report: [Docs/IMPLEMENTATION_REPORT.md](Docs/IMPLEMENTATION_REPORT.md)
 - Architecture overview: [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md)
+- Full system-design report pack (architecture, HLD/LLD, data flows, features, security, ops): [Docs/Reports/2026-04-16-system-design/README.md](Docs/Reports/2026-04-16-system-design/README.md)
 - Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
 - Changelog: [Docs/CHANGELOG.md](Docs/CHANGELOG.md)
 - Testing and verification guide: [Docs/TESTING_GUIDE.md](Docs/TESTING_GUIDE.md)

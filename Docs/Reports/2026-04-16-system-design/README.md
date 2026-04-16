@@ -19,6 +19,7 @@ If you want the most compact “single doc” view first, start with:
 - `08-features.md` — Feature inventory (user-facing + platform capabilities)
 - `09-security-safety.md` — Auth, sandboxing, tool policy, network safety
 - `10-ops-runbook.md` — Setup, env vars, local run, tests, troubleshooting
+- `11-interfaces.md` — REST + Socket.IO interfaces reference
 
 ## Sources in this repo (primary)
 
@@ -27,4 +28,3 @@ If you want the most compact “single doc” view first, start with:
 - Backend entry: `backend/app.js`
 - Backend config: `backend/src/config/env.js`
 - Frontend entry: `frontend/src/App.jsx`
-
