@@ -28,7 +28,9 @@ export default function AgentDebugPanel({
   onRunTool,
   onConfirm,
   onCancel,
-  onClearEvents
+  onClearEvents,
+  currentEmotion = "neutral",
+  onSetEmotion
 }) {
   const [selectedTool, setSelectedTool] = useState("git");
   const [gitAction, setGitAction] = useState(DEFAULT_GIT_ACTION);
@@ -90,7 +92,7 @@ export default function AgentDebugPanel({
       >
         <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
           <Terminal size={14} style={{ color: 'var(--color-primary)' }} />
-          Console
+          Debug Console
         </span>
         <ChevronDown 
           size={14} 
@@ -311,6 +313,28 @@ export default function AgentDebugPanel({
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 mt-2" style={{ borderTop: '1px solid var(--color-background-soft)', paddingTop: '12px' }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                Simulate Emotion
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {["neutral", "happy", "focused", "tired", "confused"].map((em) => (
+                  <button
+                    key={em}
+                    onClick={() => onSetEmotion?.(em)}
+                    className="px-2 py-1.5 text-xs rounded-lg transition-all"
+                    style={{
+                      background: currentEmotion === em ? 'var(--color-primary)' : 'var(--color-surface-soft)',
+                      color: currentEmotion === em ? 'white' : 'var(--color-text-primary)',
+                      border: currentEmotion === em ? '1px solid var(--color-primary)' : '1px solid var(--color-background-soft)'
+                    }}
+                  >
+                    {em}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

@@ -49,7 +49,9 @@ export default function ChatWindow({
   onOpenSandbox,
   agentEvents = [],
   pendingAgentConfirmation = null,
-  pendingConfirmation = null
+  pendingConfirmation = null,
+  canRetryLastMessage = false,
+  onRetryLastMessage
 }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -276,6 +278,8 @@ export default function ChatWindow({
             modelPreference={modelPreference}
             onModelPreferenceChange={onModelPreferenceChange}
             onOpenSandbox={onOpenSandbox}
+            canRetryLastMessage={canRetryLastMessage}
+            onRetryLastMessage={onRetryLastMessage}
             disabled={isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user"}
           />
         </div>

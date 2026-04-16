@@ -71,20 +71,21 @@ export const chatEvents = (io, socket, activeStreams) => {
         userId
       });
 
-      if (agentPlan.isAgentic) {
-        await processAgentChatTurn({
-          io,
-          socket,
-          plan: agentPlan,
-          chat,
-          chatId: currentChatId,
-          userId,
-          modelPreference,
-          customModel,
-          abortSignal: abortController.signal
-        });
-        return;
-      }
+        if (agentPlan.isAgentic) {
+          await processAgentChatTurn({
+            io,
+            socket,
+            plan: agentPlan,
+            chat,
+            chatId: currentChatId,
+            userId,
+            modelPreference,
+            customModel,
+            voice,
+            abortSignal: abortController.signal
+          });
+          return;
+        }
 
       await processStandardChatTurn({
         socket,

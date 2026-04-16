@@ -7,6 +7,28 @@ const OLLAMA_TIMEOUT = parseInt(process.env.OLLAMA_TIMEOUT) || 120000;
 const MAX_RETRIES = parseInt(process.env.OLLAMA_MAX_RETRIES) || 3;
 const RETRY_DELAY = parseInt(process.env.OLLAMA_RETRY_DELAY) || 2000;
 
+const getCasualModelName = () =>
+  process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b";
+
+const readInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getKeepAliveForModel = (model = "") => {
+  const fast = process.env.OLLAMA_KEEP_ALIVE_FAST || "30m";
+  const heavy = process.env.OLLAMA_KEEP_ALIVE_HEAVY || "15m";
+  const casual = getCasualModelName();
+  return String(model || "").trim() === String(casual || "").trim() ? fast : heavy;
+};
+
+const getNumCtxForModel = (model = "") => {
+  const fast = readInt(process.env.OLLAMA_NUM_CTX_FAST, 2048);
+  const heavy = readInt(process.env.OLLAMA_NUM_CTX_HEAVY, 4096);
+  const casual = getCasualModelName();
+  return String(model || "").trim() === String(casual || "").trim() ? fast : heavy;
+};
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const formatOllamaError = (err, baseUrl = getOllamaBaseUrl()) => {
@@ -112,12 +134,12 @@ export const generateResponse = async (messages, modelOverride = null) => {
             model,
             messages: messages.map(m => ({ role: m.role, content: m.content, ...(m.images ? { images: m.images } : {}) })),
             stream: false,
-            keep_alive: "5m", // Automatically unload model after 5 idle minutes
-            options: { num_ctx: 4096, temperature: 0.1 }
-          })
-        },
-        OLLAMA_TIMEOUT
-      );
+             keep_alive: getKeepAliveForModel(model),
+             options: { num_ctx: getNumCtxForModel(model), temperature: 0.1 }
+           })
+         },
+         OLLAMA_TIMEOUT
+       );
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
@@ -175,12 +197,12 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
         model,
         messages: safeMessages,
         stream: true,
-        keep_alive: "5m", // Automatic VRAM recycling
-        options: { num_ctx: 4096, temperature: 0.1 }
-      })
-    },
-    OLLAMA_TIMEOUT
-  );
+         keep_alive: getKeepAliveForModel(model),
+         options: { num_ctx: getNumCtxForModel(model), temperature: 0.1 }
+       })
+     },
+     OLLAMA_TIMEOUT
+   );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
@@ -325,4 +347,12 @@ export const prewarmModel = (modelName) => {
       options: { num_predict: 2 }
     })
   }).catch((err) => console.log(`Prewarming failed: ${err.message}`));
+};
+
+export default {
+  generateResponseStream,
+  generateResponse,
+  generateCompletion,
+  checkOllamaHealth,
+  prewarmModel
 };

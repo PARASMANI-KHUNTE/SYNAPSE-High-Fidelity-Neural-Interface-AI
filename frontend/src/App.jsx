@@ -4,11 +4,15 @@ import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import SandboxPanel from "./components/SandboxPanel";
 import AgentConsole from "./components/AgentConsole";
+import AgentDebugPanel from "./components/AgentDebugPanel";
 import TriggerPanel from "./components/TriggerPanel";
-  
+import AvatarCanvas from "./components/AvatarCanvas";
+import WebcamManager from "./components/WebcamManager";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff } from "lucide-react";
 import "./App.css";
+
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const RECONNECT_DELAY = 3000;
@@ -126,12 +130,18 @@ function App() {
       const saved = JSON.parse(localStorage.getItem("synapse_panel_prefs") || "{}");
       return {
         memory: saved.memory !== false,
-        statusRing: saved.statusRing !== false
+        statusRing: saved.statusRing !== false,
+        agentConsole: saved.agentConsole !== false,
+        agentDebug: saved.agentDebug !== false,
+        avatar: saved.avatar !== false
       };
     } catch {
       return {
         memory: true,
-        statusRing: true
+        statusRing: true,
+        agentConsole: true,
+        agentDebug: false,
+        avatar: true
       };
     }
   });
@@ -151,6 +161,7 @@ function App() {
   );
   const [suggestion, setSuggestion] = useState("");
   const [isWaitingReply, setIsWaitingReply] = useState(false);
+  const [canRetryLastMessage, setCanRetryLastMessage] = useState(false);
   const [agentTools, setAgentTools] = useState([]);
   const [agentEvents, setAgentEvents] = useState([]);
   const [pendingAgentConfirmation, setPendingAgentConfirmation] = useState(null);
@@ -158,9 +169,10 @@ function App() {
   const [memoryProfile, setMemoryProfile] = useState(null);
   const [memoryEpisodes, setMemoryEpisodes] = useState([]);
   const [triggerAlerts, setTriggerAlerts] = useState([]);
+  const [perceptionEmotion, setPerceptionEmotion] = useState("neutral");
+  
 
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) || "");
-  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem(REFRESH_TOKEN_KEY) || "");
   const [authUser, setAuthUser] = useState(null);
   const [authMode, setAuthMode] = useState("login");
   const [authEmail, setAuthEmail] = useState("");
@@ -174,6 +186,7 @@ function App() {
   const socketRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
+  const speakStartTimerRef = useRef(null);
   const audioRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isSpeakingRef = useRef(false);
@@ -189,6 +202,7 @@ function App() {
   const pendingAssistantChunkRef = useRef("");
   const chunkFlushTimerRef = useRef(null);
   const suggestDebounceRef = useRef(null);
+  const lastOutboundRef = useRef(null);
 
   useEffect(() => { userIdRef.current = authUser?.id || ""; }, [authUser]);
   useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
@@ -243,6 +257,10 @@ function App() {
 
   const clearAudioQueue = useCallback(() => {
     audioQueueRef.current = [];
+    if (speakStartTimerRef.current) {
+      clearTimeout(speakStartTimerRef.current);
+      speakStartTimerRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -337,7 +355,6 @@ function App() {
 
   const setSessionTokens = useCallback((nextAccess, nextRefresh) => {
     setAccessToken(nextAccess || "");
-    setRefreshToken(nextRefresh || "");
     if (nextAccess) localStorage.setItem(ACCESS_TOKEN_KEY, nextAccess);
     else localStorage.removeItem(ACCESS_TOKEN_KEY);
     if (nextRefresh) localStorage.setItem(REFRESH_TOKEN_KEY, nextRefresh);
@@ -356,23 +373,6 @@ function App() {
       });
   }, []);
 
-  const tryRefreshSession = useCallback(async () => {
-    if (!refreshToken) return false;
-    try {
-      const res = await fetch(`${SOCKET_URL}/api/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken })
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      setSessionTokens(data.accessToken, data.refreshToken);
-      await loadCurrentUser(data.accessToken);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [refreshToken, setSessionTokens, loadCurrentUser]);
 
   const clearAuthSession = useCallback(() => {
     setSessionTokens("", "");
@@ -522,6 +522,7 @@ function App() {
         if (!mountedRef.current) return;
         setIsWaitingReply(false);
         setIsTyping(true);
+        setCanRetryLastMessage(false);
         isGenerationActiveRef.current = true;
         pendingAssistantChunkRef.current = "";
         const assistantId = `temp_${Date.now()}`;
@@ -581,6 +582,7 @@ function App() {
         isGenerationActiveRef.current = false;
         assistantMessageIdRef.current = null;
         setIsTyping(false);
+        setCanRetryLastMessage(false);
         fetchMemoryProfile();
       });
 
@@ -603,8 +605,21 @@ function App() {
         isGenerationActiveRef.current = false;
         assistantMessageIdRef.current = null;
         setIsTyping(false);
+        setCanRetryLastMessage(Boolean(lastOutboundRef.current));
         if (data?.message)
           setMessages((prev) => [...prev, { role: "assistant", content: data.message, isError: true, id: `err_${Date.now()}` }]);
+      });
+
+      socketInstance.on("system:alert", (alert) => {
+        if (!mountedRef.current) return;
+        setTriggerAlerts((prev) => [
+          {
+            ...alert,
+            id: alert._id || alert.id || Date.now(),
+            timestamp: alert.timestamp || new Date().toISOString()
+          },
+          ...prev.slice(0, 19)
+        ]);
       });
 
       socketInstance.on("audio:ready", (data) => {
@@ -618,8 +633,26 @@ function App() {
             audio.crossOrigin = "anonymous";
             audio.preload = "auto";
             audio.src = audioUrl;
+            audio.load();
             audioQueueRef.current.push(audio);
-            if (!isSpeakingRef.current && playNextFnRef.current) playNextFnRef.current();
+
+            if (!isSpeakingRef.current && playNextFnRef.current) {
+              if (audioQueueRef.current.length >= 2) {
+                if (speakStartTimerRef.current) {
+                  clearTimeout(speakStartTimerRef.current);
+                  speakStartTimerRef.current = null;
+                }
+                playNextFnRef.current();
+              } else if (!speakStartTimerRef.current) {
+                speakStartTimerRef.current = setTimeout(() => {
+                  speakStartTimerRef.current = null;
+                  if (!mountedRef.current) return;
+                  if (!isSpeakingRef.current && audioQueueRef.current.length > 0 && playNextFnRef.current) {
+                    playNextFnRef.current();
+                  }
+                }, 650);
+              }
+            }
           } catch (err) {
             console.error("Audio error:", err);
           }
@@ -629,6 +662,11 @@ function App() {
       socketInstance.on("trigger:alert", (data) => {
         if (!mountedRef.current) return;
         setTriggerAlerts(prev => [...prev.slice(-20), { ...data, id: `trigger-${Date.now()}` }]);
+      });
+
+      socketInstance.on("perception:update", (data) => {
+        if (!mountedRef.current) return;
+        if (data?.emotion) setPerceptionEmotion(data.emotion);
       });
     };
 
@@ -667,23 +705,27 @@ function App() {
   const handleStopAudio = useCallback(() => clearAudioQueue(), [clearAudioQueue]);
 
   const handleSendMessage = useCallback((content, fileUrl, fileType, voice, selectedModel) => {
-    if (!socketRef.current?.connected) return;
-    isGenerationActiveRef.current = false;
-    setIsWaitingReply(true);
-    socketRef.current.emit("chat:message", {
+    const payload = {
       chatId: activeChatId,
-      message: content || "",
-      fileUrl: fileType === "image" ? null : fileUrl,
-      fileType: fileType || null,
-      images: fileType === "image" ? (fileUrl ? [fileUrl] : []) : [],
-      voice,
+      message: content,
+      fileUrl,
+      fileType,
+      voicePreference: voice,
       modelPreference: selectedModel || modelPreference,
-    });
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content, imageUrls: fileType === "image" ? (fileUrl ? [normalizeMediaUrl(fileUrl)] : []) : [] },
-    ]);
-  }, [activeChatId, modelPreference, normalizeMediaUrl]);
+    };
+    lastOutboundRef.current = payload;
+    if (socketRef.current?.connected) {
+      setIsWaitingReply(true);
+      socketRef.current.emit("chat:message", payload);
+    }
+  }, [activeChatId, modelPreference]);
+
+  const handleRetryLastMessage = useCallback(() => {
+    if (!lastOutboundRef.current || !socketRef.current?.connected) return;
+    setIsWaitingReply(true);
+    socketRef.current.emit("chat:message", lastOutboundRef.current);
+  }, []);
+
 
   const handleSelectChat = useCallback((chatId) => {
     setActiveChatId(chatId);
@@ -718,7 +760,6 @@ function App() {
 
   const handleSuggest = useCallback((input) => {
     if (!socketRef.current?.connected || !input || input.length <= 5) return;
-    // Debounce: wait 300ms after last keystroke before emitting
     if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
     suggestDebounceRef.current = setTimeout(() => {
       if (socketRef.current?.connected) {
@@ -738,35 +779,15 @@ function App() {
 
   const handleApplyLayoutPreset = useCallback((preset) => {
     const presets = {
-      focus: {
-        memory: false,
-        statusRing: true,
-        agentConsole: false,
-        sandbox: false
-      },
-      dev: {
-        memory: true,
-        statusRing: true,
-        agentConsole: true,
-        sandbox: true
-      },
-      mission: {
-        memory: true,
-        statusRing: true,
-        agentConsole: true,
-        sandbox: false
-      }
+      focus: { memory: false, statusRing: true, agentConsole: false, sandbox: false, avatar: false },
+      dev: { memory: true, statusRing: true, agentConsole: true, sandbox: true, avatar: true },
+      mission: { memory: true, statusRing: true, agentConsole: true, sandbox: false, avatar: true }
     };
-
     const nextPrefs = presets[preset];
-    if (!nextPrefs) {
-      return;
-    }
-
-    setActiveLayoutPreset(preset);
-    setPanelPrefs(nextPrefs);
-    if (nextPrefs.sandbox === false && isSandboxOpen) {
-      setIsSandboxOpen(false);
+    if (nextPrefs) {
+      setActiveLayoutPreset(preset);
+      setPanelPrefs(nextPrefs);
+      if (nextPrefs.sandbox === false && isSandboxOpen) setIsSandboxOpen(false);
     }
   }, [isSandboxOpen]);
 
@@ -791,9 +812,9 @@ function App() {
     setPendingAgentConfirmation(null);
   }, []);
 
-  const handleClearAgentEvents = useCallback(() => {
-    setAgentEvents([]);
-  }, []);
+  const handleClearAgentEvents = useCallback(() => setAgentEvents([]), []);
+  const handleClearAlerts = useCallback(() => setTriggerAlerts([]), []);
+  const handleDismissAlert = useCallback((id) => setTriggerAlerts(prev => prev.filter(a => (a._id || a.id) !== id)), []);
 
   const handleRefine = useCallback((messageId, content) => {
     if (!socketRef.current?.connected || !activeChatId) return;
@@ -812,33 +833,18 @@ function App() {
       const email = authEmail.trim().toLowerCase();
       const password = authPassword;
       const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!EMAIL_PATTERN.test(email)) {
-        throw new Error("Enter a valid email address");
-      }
-      if (password.length < 8) {
-        throw new Error("Password must be at least 8 characters");
-      }
+      if (!EMAIL_PATTERN.test(email)) throw new Error("Enter a valid email address");
+      if (password.length < 8) throw new Error("Password must be at least 8 characters");
 
       const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
-      const payload = authMode === "register"
-        ? { email, password, displayName: authDisplayName }
-        : { email, password };
+      const payload = authMode === "register" ? { email, password, displayName: authDisplayName } : { email, password };
       const res = await fetch(`${SOCKET_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (res.status === 401) {
-          throw new Error("Invalid credentials");
-        }
-        if (res.status === 409) {
-          throw new Error("Email already registered");
-        }
-        throw new Error(data.error || "Authentication failed");
-      }
+      if (!res.ok) throw new Error(data.error || "Authentication failed");
       setSessionTokens(data.accessToken, data.refreshToken);
       setAuthUser(data.user || null);
     } catch (err) {
@@ -849,110 +855,50 @@ function App() {
   }, [authMode, authEmail, authPassword, authDisplayName, setSessionTokens]);
 
   const handleLogout = useCallback(async () => {
-    try {
-      if (accessToken) {
-        await fetch(`${SOCKET_URL}/api/auth/logout`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-      }
-    } catch (err) {
-      console.warn("Logout failed:", err);
-    }
+    try { if (accessToken) await fetch(`${SOCKET_URL}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } }); } 
+    catch (err) { console.warn("Logout failed:", err); }
     clearAuthSession();
   }, [accessToken, clearAuthSession]);
 
   if (!authUser) {
     return (
       <div className="h-screen flex items-center justify-center px-4" style={{ background: 'var(--color-background)' }}>
-        <div className="w-full max-w-md rounded-2xl p-8 warm-card soft-shadow-lg">
-          <div className="flex items-center gap-3 mb-6">
+        <div className="w-full max-w-md rounded-2xl p-8 warm-card soft-shadow-lg text-center">
+           <div className="flex items-center gap-3 mb-6 justify-center">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-primary)' }}>
               <Sparkles size={18} className="text-white" />
             </div>
             <div>
               <h2 className="text-xl font-display font-semibold" style={{ color: 'var(--color-text-primary)' }}>Sign in to Synapse</h2>
-              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                {authMode === "register" ? "Create an account" : "Welcome back"}
-              </p>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{authMode === "register" ? "Create an account" : "Welcome back"}</p>
             </div>
           </div>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Email</label>
+            <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="Email" className="w-full px-4 py-3 rounded-xl text-sm outline-none bg-[var(--color-surface-soft)] text-[var(--color-text-primary)] border border-[var(--color-background-soft)]" />
+            <div className="relative">
               <input 
-                value={authEmail} 
-                onChange={(e) => setAuthEmail(e.target.value)} 
-                placeholder="you@example.com" 
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
-                style={{ 
-                  background: 'var(--color-surface-soft)', 
-                  color: 'var(--color-text-primary)',
-                  border: '1px solid var(--color-background-soft)'
-                }} 
+                value={authPassword} 
+                onChange={(e) => setAuthPassword(e.target.value)} 
+                type={showPassword ? "text" : "password"} 
+                placeholder="Password" 
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none bg-[var(--color-surface-soft)] text-[var(--color-text-primary)] border border-[var(--color-background-soft)]" 
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Password</label>
-              <div className="relative">
-                <input 
-                  value={authPassword} 
-                  onChange={(e) => setAuthPassword(e.target.value)} 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="Min. 8 characters" 
-                  className="w-full px-4 py-3 pr-12 rounded-xl text-sm outline-none transition-all"
-                  style={{ 
-                    background: 'var(--color-surface-soft)', 
-                    color: 'var(--color-text-primary)',
-                    border: '1px solid var(--color-background-soft)'
-                  }} 
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
             {authMode === "register" && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Display name (optional)</label>
-                <input 
-                  value={authDisplayName} 
-                  onChange={(e) => setAuthDisplayName(e.target.value)} 
-                  placeholder="Your name" 
-                  className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
-                  style={{ 
-                    background: 'var(--color-surface-soft)', 
-                    color: 'var(--color-text-primary)',
-                    border: '1px solid var(--color-background-soft)'
-                  }} 
-                />
-              </div>
+              <input value={authDisplayName} onChange={(e) => setAuthDisplayName(e.target.value)} placeholder="Display Name" className="w-full px-4 py-3 rounded-xl text-sm outline-none bg-[var(--color-surface-soft)] text-[var(--color-text-primary)] border border-[var(--color-background-soft)]" />
             )}
-            {authError && (
-              <p className="text-sm" style={{ color: 'var(--color-error)' }}>{authError}</p>
-            )}
-            <button 
-              disabled={isAuthLoading} 
-              onClick={handleAuthSubmit} 
-              className="w-full px-4 py-3 rounded-xl text-white font-medium transition-all hover:opacity-90 active:scale-[0.98]"
-              style={{ background: 'var(--color-primary)' }}
-            >
-              {isAuthLoading ? "Please wait..." : authMode === "register" ? "Create account" : "Sign in"}
-            </button>
-            <p className="text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              {authMode === "register" ? "Already have an account?" : "Don't have an account?"}{" "}
-              <button 
-                onClick={() => setAuthMode((m) => (m === "register" ? "login" : "register"))} 
-                className="font-medium"
-                style={{ color: 'var(--color-primary)' }}
-              >
-                {authMode === "register" ? "Sign in" : "Register"}
-              </button>
+            {authError && <p className="text-xs text-error">{authError}</p>}
+            <button disabled={isAuthLoading} onClick={handleAuthSubmit} className="w-full py-3 rounded-xl bg-[var(--color-primary)] text-white font-medium hover:opacity-90 active:scale-95">{isAuthLoading ? "Loading..." : authMode === "register" ? "Register" : "Sign In"}</button>
+            <p className="text-sm text-[var(--color-text-muted)] cursor-pointer" onClick={() => setAuthMode(m => m === 'register' ? 'login' : 'register')}>
+              {authMode === "register" ? "Already have an account? Sign in" : "Don't have an account? Register"}
             </p>
           </div>
         </div>
@@ -962,24 +908,13 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {/* Connection toast */}
       <ConnectionToast isConnected={isConnected} connectionError={connectionError} />
-
-      {/* Layout */}
-      <div
-        className="flex h-screen w-full overflow-hidden relative"
-        style={{ zIndex: 1 }}
-      >
+      <div className="flex h-screen w-full overflow-hidden relative" style={{ zIndex: 1 }}>
         <Sidebar
           sessions={chatSessions}
           activeChatId={activeChatId}
           onSelectChat={handleSelectChat}
-          onNewChat={() => {
-            setActiveChatId(null);
-            localStorage.removeItem("active_chat_id");
-            setMessages([]);
-            setSuggestion("");
-          }}
+          onNewChat={() => { setActiveChatId(null); localStorage.removeItem("active_chat_id"); setMessages([]); setSuggestion(""); }}
           onDeleteChat={handleDeleteChat}
           onLogout={handleLogout}
           panelPrefs={panelPrefs}
@@ -990,25 +925,25 @@ function App() {
           memoryEpisodes={memoryEpisodes}
           memoryProfile={memoryProfile}
           isConnected={isConnected}
+          alerts={triggerAlerts}
+          onClearAlerts={handleClearAlerts}
+          onDismissAlert={handleDismissAlert}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(c => !c)}
         />
 
-        {/* Main content — flexible center column */}
-        <main
-          className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative"
-        >
+        <main className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative">
           <ChatWindow
             messages={messages}
             isTyping={isTyping}
             isWaitingReply={isWaitingReply}
-            isSpeaking={isSpeaking}
+            onSendMessage={handleSendMessage}
             operatorName={operatorName}
             suggestion={suggestion}
             modelPreference={modelPreference}
-            onModelPreferenceChange={setModelPreference}
-            onOpenSandbox={() => setIsSandboxOpen(true)}
-            onSendMessage={handleSendMessage}
+            onModelChange={setModelPreference}
+            canRetryLastMessage={canRetryLastMessage}
+            onRetryLastMessage={handleRetryLastMessage}
             onStopMessage={handleStopMessage}
             onStopAudio={handleStopAudio}
             onFeedback={handleFeedback}
@@ -1019,23 +954,45 @@ function App() {
             pendingAgentConfirmation={pendingAgentConfirmation}
           />
 
-        <AnimatePresence>
-          {panelPrefs.agentConsole && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="absolute right-4 bottom-24 w-96 z-30"
-            >
-              <AgentConsole
-                isOpen={true}
-                agentEvents={agentEvents}
-                pendingConfirmation={pendingAgentConfirmation}
+          <AnimatePresence>
+            {panelPrefs.agentConsole && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-4 bottom-24 w-96 z-30">
+                <AgentConsole isOpen={true} agentEvents={agentEvents} pendingConfirmation={pendingAgentConfirmation} />
+              </motion.div>
+            )}
+            {panelPrefs.agentDebug && (
+               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="absolute right-4 bottom-24 w-96 z-40 bg-surface/90 backdrop-blur rounded-2xl overflow-hidden soft-shadow-xl border border-primary/20">
+                  <AgentDebugPanel 
+                    onRunTool={handleRunAgentTool} 
+                    tools={agentTools} 
+                    events={agentEvents} 
+                    onClearEvents={handleClearAgentEvents}
+                    onConfirmTool={handleConfirmAgentTool}
+                    onCancelTool={handleCancelAgentTool}
+                    currentEmotion={perceptionEmotion}
+                    onSetEmotion={(e) => {
+                      setPerceptionEmotion(e);
+                      if (socketRef.current?.connected) socketRef.current.emit("perception:manual_emotion", { emotion: e });
+                    }}
+                  />
+               </motion.div>
+            )}
+            {panelPrefs.avatar && (
+              <AvatarCanvas 
+                isTyping={isTyping} 
+                isSpeaking={isSpeaking} 
+                emotion={perceptionEmotion}
               />
-            </motion.div>
+            )}
+          </AnimatePresence>
+
+          {panelPrefs.avatar && (
+            <WebcamManager 
+              socket={socketRef.current} 
+              isActive={true} 
+            />
           )}
-        </AnimatePresence>
-      </main>
+        </main>
 
         <SandboxPanel isOpen={isSandboxOpen} onClose={() => setIsSandboxOpen(false)} />
       </div>

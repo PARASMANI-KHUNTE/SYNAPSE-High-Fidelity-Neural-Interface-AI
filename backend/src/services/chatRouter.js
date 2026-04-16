@@ -1,8 +1,7 @@
 /**
  * Query Classifier & Router Service
- * Distinguishes between different types of user interactions 
- * to determine the optimal processing path (RAG vs direct)
- * and the ideal LLM model.
+ * Prioritizes perceived speed by default:
+ * - Route to heavier models only when the query clearly warrants it.
  */
 
 const GREETING_PATTERNS = [
@@ -23,30 +22,47 @@ const CODE_PATTERNS = [
   /\b(explain this code|how does this work|what does this do|how to implement|how to build)\b/i
 ];
 
-const CASUAL_THRESHOLD = 10; // Characters
+const REASONING_PATTERNS = [
+  /\b(step[-\s]?by[-\s]?step|think through|walk me through|reason)\b/i,
+  /\b(analy(?:ze|sis)|root cause|diagnose)\b/i,
+  /\b(compare|trade-?offs?|pros and cons|decision)\b/i,
+  /\b(architecture|system design|hld|lld)\b/i,
+  /\b(plan|roadmap|strategy)\b/i
+];
+
+const CODE_FENCE_PATTERN = /```|^\s*(traceback|exception|error:|stack trace)\b/i;
+
+const CASUAL_CHAR_THRESHOLD = 18;
+const CASUAL_WORD_THRESHOLD = 8;
+const LONG_QUERY_CHAR_THRESHOLD = 220;
+
+const countWords = (text = "") =>
+  String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
 
 /**
  * Classifies a user query into a specific type.
- * @param {string} query 
- * @returns {'GREETING' | 'IDENTITY' | 'CASUAL' | 'CODE' | 'KNOWLEDGE'}
+ * @param {string} query
+ * @param {{hasImages?: boolean}} opts
+ * @returns {'GREETING' | 'IDENTITY' | 'CASUAL' | 'CODE' | 'REASONING' | 'KNOWLEDGE' | 'VISION'}
  */
-export const classifyQuery = (query) => {
+export const classifyQuery = (query, opts = {}) => {
   const trimmed = String(query || "").trim();
-  
-  if (GREETING_PATTERNS.some(p => p.test(trimmed))) {
-    return "GREETING";
-  }
+  const hasImages = Boolean(opts?.hasImages);
 
-  if (IDENTITY_PATTERNS.some(p => p.test(trimmed))) {
-    return "IDENTITY";
-  }
+  if (hasImages) return "VISION";
 
-  if (CODE_PATTERNS.some(p => p.test(trimmed))) {
-    return "CODE";
-  }
+  if (GREETING_PATTERNS.some((pattern) => pattern.test(trimmed))) return "GREETING";
+  if (IDENTITY_PATTERNS.some((pattern) => pattern.test(trimmed))) return "IDENTITY";
+  if (CODE_FENCE_PATTERN.test(trimmed) || CODE_PATTERNS.some((pattern) => pattern.test(trimmed))) return "CODE";
 
-  if (trimmed.length < CASUAL_THRESHOLD) {
-    return "CASUAL";
+  const wordCount = countWords(trimmed);
+  if (trimmed.length <= CASUAL_CHAR_THRESHOLD || wordCount <= CASUAL_WORD_THRESHOLD) return "CASUAL";
+
+  if (REASONING_PATTERNS.some((pattern) => pattern.test(trimmed)) || trimmed.length >= LONG_QUERY_CHAR_THRESHOLD) {
+    return "REASONING";
   }
 
   return "KNOWLEDGE";
@@ -54,47 +70,35 @@ export const classifyQuery = (query) => {
 
 /**
  * Determines if RAG context retrieval is necessary for the given query type.
- * @param {string} type 
- * @returns {boolean}
+ * (Additional gating happens in chatPipeline.)
  */
-export const shouldUseRAG = (type) => {
-  return type === "KNOWLEDGE" || type === "CODE";
-};
+export const shouldUseRAG = (type) => type === "REASONING" || type === "KNOWLEDGE";
 
 /**
  * Picks the appropriate Ollama model based on query type.
- * CODE     → DeepSeek-Coder 6.7B Q4 (precision code model)
- * KNOWLEDGE → Qwen2.5:7B (best reasoning + research)
- * GREETING/CASUAL → llama3.2:3b (fast, low VRAM)
- * @param {string} type 
- * @param {boolean} hasImages
- * @returns {string}
+ * Default behavior: keep most turns on the fast model.
  */
 export const selectModel = (type, hasImages = false) => {
   if (hasImages) {
     return process.env.OLLAMA_VISION_MODEL || "llava";
   }
+
   if (type === "CODE") {
-    const model = process.env.OLLAMA_CODE_MODEL || "deepseek-coder:6.7b-instruct-q4_0";
-    console.log(`[Router] 🧑‍💻 CODE query → ${model}`);
-    return model;
+    return process.env.OLLAMA_CODE_MODEL || "deepseek-coder:6.7b-instruct-q4_0";
   }
-  if (type === "KNOWLEDGE" || type === "IDENTITY") {
-    const model = process.env.OLLAMA_REASON_MODEL || process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b";
-    console.log(`[Router] 🧠 KNOWLEDGE/IDENTITY query → ${model}`);
-    return model;
+
+  if (type === "REASONING") {
+    return process.env.OLLAMA_REASON_MODEL || process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b";
   }
-  // GREETING, CASUAL → fast small model
-  const model = process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b";
-  console.log(`[Router] 💬 ${type} query → ${model}`);
-  return model;
+
+  return process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b";
 };
 
 export const getConfiguredModels = () => ({
   auto: "Auto",
-  chat: process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_REASON_MODEL || "qwen2.5:7b",
+  chat: process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b",
   code: process.env.OLLAMA_CODE_MODEL || "deepseek-coder:6.7b-instruct-q4_0",
-  reasoning: process.env.OLLAMA_REASON_MODEL || process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b",
+  reasoning: process.env.OLLAMA_REASON_MODEL || "qwen2.5:7b",
   casual: process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b",
   vision: process.env.OLLAMA_VISION_MODEL || "llava"
 });
@@ -103,15 +107,13 @@ export const resolveModelPreference = ({ preference, queryType, hasImages = fals
   const requested = String(preference || "auto").trim().toLowerCase();
   const configured = getConfiguredModels();
 
-  if (hasImages) {
-    return configured.vision;
-  }
+  if (hasImages) return configured.vision;
 
   switch (requested) {
     case "auto":
       return selectModel(queryType, hasImages);
     case "chat":
-      return configured.chat;
+      return configured.casual;
     case "code":
       return configured.code;
     case "reasoning":
@@ -125,23 +127,21 @@ export const resolveModelPreference = ({ preference, queryType, hasImages = fals
   }
 };
 
-/**
- * Gets a custom system prompt modifier based on query type.
- * @param {string} type 
- * @param {string} operatorName 
- * @returns {string}
- */
 export const getSystemPromptModifier = (type, operatorName) => {
   switch (type) {
     case "GREETING":
-      return `Be warm and welcoming to ${operatorName}. Keep it brief and friendly.`;
+      return `Be brief, warm, and direct to ${operatorName}.`;
     case "IDENTITY":
-      return `Focus on addressing ${operatorName} by name and using known facts about them from Memory/History.`;
+      return `Use known facts about ${operatorName} from memory/history; do not invent personal details.`;
     case "CODE":
-      return `You are a precision coding assistant. Respond with clean, well-commented code blocks. Explain the logic clearly. Always prefer working, complete, production-ready code.`;
+      return "Provide correct, runnable code first. Explain after, briefly.";
     case "CASUAL":
-      return "Respond naturally and conversationally. No need to be overly formal or data-heavy.";
+      return "Be concise and natural. Avoid filler openers/closings.";
+    case "REASONING":
+      return "Be structured and professional. Use bullets/headings, state assumptions, and answer in the first 1–2 sentences.";
+    case "VISION":
+      return "Follow strict vision grounding rules: observations first, then interpretation, then uncertainty. Never invent details.";
     default:
-      return "Provide precise, data-driven answers based on available context.";
+      return "Be professional, concise, and factual. Answer in the first 1–2 sentences.";
   }
 };

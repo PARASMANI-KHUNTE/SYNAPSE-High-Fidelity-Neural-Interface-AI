@@ -26,7 +26,7 @@ const EventIcon = ({ type }) => {
   }
 };
 
-export default function AgentConsole({ isOpen, onClose, agentEvents = [], pendingConfirmation = null }) {
+export default function AgentConsole({ isOpen, agentEvents = [], pendingConfirmation = null }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -51,7 +51,8 @@ export default function AgentConsole({ isOpen, onClose, agentEvents = [], pendin
   };
 
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp || Date.now());
+    if (!timestamp) return "--:--:--";
+    const date = new Date(timestamp);
     return date.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 

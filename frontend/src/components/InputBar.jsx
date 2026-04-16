@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createElement } from "react";
-import { Send, ImagePlus, Mic, X, Loader2, Volume2, VolumeX, Square, FileText, Sparkles, TerminalSquare } from "lucide-react";
+import { Send, ImagePlus, Mic, X, Loader2, Volume2, VolumeX, Square, FileText, Sparkles, TerminalSquare, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
@@ -46,7 +46,8 @@ function ToolBtn({ onClick, disabled, icon: _Icon, label, active, color, pulse }
 export default function InputBar({
   onSendMessage, onStopMessage, onStopAudio, isTyping, isSpeaking,
   disabled, suggestion, onSuggest, clearSuggestion,
-  modelPreference, onModelPreferenceChange, onOpenSandbox
+  modelPreference, onModelPreferenceChange, onOpenSandbox,
+  canRetryLastMessage, onRetryLastMessage
 }) {
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
@@ -502,6 +503,22 @@ export default function InputBar({
               active={autoSpeak}
               color="var(--color-primary)"
             />
+
+            {!isTyping && !isSpeaking && canRetryLastMessage && (
+              <button
+                onClick={() => onRetryLastMessage?.()}
+                disabled={disabled || isUploading}
+                className="w-9 h-9 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: 'var(--color-warning)15',
+                  color: 'var(--color-warning)',
+                  border: '1px solid var(--color-warning)30'
+                }}
+                title="Retry last message"
+              >
+                <RotateCcw size={14} />
+              </button>
+            )}
 
             {(isTyping || isSpeaking) ? (
               <button

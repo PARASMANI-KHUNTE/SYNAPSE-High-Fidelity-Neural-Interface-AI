@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -20,6 +20,7 @@ import { errorHandler, notFoundHandler } from "./src/middleware/errorHandler.js"
 import { getConfiguredModels } from "./src/services/chatRouter.js";
 import { prewarmModel } from "./src/services/llm.js";
 import { getQueueMetrics } from "./src/queues/jobOrchestrator.js";
+import { proactiveEngine } from "./src/services/proactiveEngine.js";
 
 import chatRoutes from "./src/routes/chat.js";
 import memoryRoutes from "./src/routes/memory.js";
@@ -49,16 +50,18 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
-const createLimiter = (options) => rateLimit({
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => config.app.nodeEnv === "development",
-  ...options,
-  keyGenerator: (req) => {
-    const userId = req.user?.id || req.headers["x-user-id"] || "anonymous";
-    return `${req.ip || "unknown"}-${userId}`;
-  }
-});
+  const createLimiter = (options) => rateLimit({
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => config.app.nodeEnv === "development",
+    ...options,
+    keyGenerator: (req) => {
+      // Use express-rate-limit's helper to correctly normalize IPv6 addresses.
+      // Also include user id (when present) to reduce shared-IP collisions for authenticated traffic.
+      const userId = req.auth?.userId || req.headers["x-user-id"] || "anonymous";
+      return `${ipKeyGenerator(req)}-${userId}`;
+    }
+  });
 
 const chatLimiter = createLimiter({
   windowMs: 60 * 1000,
@@ -172,6 +175,21 @@ export const startServer = () => {
     logger.info({ port: config.app.port, env: config.app.nodeEnv }, "SYNAPSE server running");
     // Asynchronously pre-warm the lightweight casual model so first response is fast
     prewarmModel(config.ollama.model || "llama3.2:3b");
+
+    // Optional: prewarm heavier models to reduce first-use latency (may increase VRAM usage).
+    const prewarmExtra = ["1", "true", "yes", "on"].includes(String(process.env.PREWARM_EXTRA_MODELS || "").toLowerCase());
+    if (prewarmExtra) {
+      const models = getConfiguredModels();
+      const extras = [models.reasoning, models.code].filter(Boolean);
+      for (const model of extras) {
+        if (model && model !== (config.ollama.model || "")) {
+          prewarmModel(model);
+        }
+      }
+    }
+     
+    // Initialize Proactive Intelligence Engine
+    proactiveEngine.initialize();
   });
   serverStarted = true;
   return httpServer;

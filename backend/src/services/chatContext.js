@@ -1,6 +1,12 @@
-const DEFAULT_HISTORY_MESSAGE_LIMIT = parseInt(process.env.CONTEXT_WINDOW_SIZE, 10) || 24;
-const DEFAULT_HISTORY_CHAR_BUDGET = parseInt(process.env.CONTEXT_CHAR_BUDGET, 10) || 12000;
-const DEFAULT_MEMORY_FACT_LIMIT = parseInt(process.env.MEMORY_FACT_LIMIT, 10) || 8;
+const readInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+// Smaller defaults improve speed (less prompt) while remaining configurable via env.
+const DEFAULT_HISTORY_MESSAGE_LIMIT = readInt(process.env.CONTEXT_WINDOW_SIZE, 12);
+const DEFAULT_HISTORY_CHAR_BUDGET = readInt(process.env.CONTEXT_CHAR_BUDGET, 8000);
+const DEFAULT_MEMORY_FACT_LIMIT = readInt(process.env.MEMORY_FACT_LIMIT, 8);
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "for", "from", "how",
@@ -39,11 +45,8 @@ const truncate = (text, limit = 1600) => {
   return text.length > limit ? `${text.substring(0, limit)}...` : text;
 };
 
-const isMemoryFact = (content) =>
-  MEMORY_PATTERNS.some((pattern) => pattern.test(content));
-
-const isMemoryQuery = (query) =>
-  MEMORY_QUERY_PATTERNS.some((pattern) => pattern.test(query));
+const isMemoryFact = (content) => MEMORY_PATTERNS.some((pattern) => pattern.test(content));
+const isMemoryQuery = (query) => MEMORY_QUERY_PATTERNS.some((pattern) => pattern.test(query));
 
 const extractMemoryFacts = (messages, limit = DEFAULT_MEMORY_FACT_LIMIT) => {
   const facts = [];
@@ -57,16 +60,11 @@ const extractMemoryFacts = (messages, limit = DEFAULT_MEMORY_FACT_LIMIT) => {
 
     const fact = truncate(message.content.replace(/\s+/g, " "), 220);
     const key = fact.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
+    if (seen.has(key)) continue;
 
     facts.push(fact);
     seen.add(key);
-
-    if (facts.length >= limit) {
-      break;
-    }
+    if (facts.length >= limit) break;
   }
 
   return facts.reverse();
@@ -77,9 +75,7 @@ const selectConversationHistory = (messages, query) => {
     .map((message, index) => ({ ...normalizeMessage(message), index }))
     .filter((message) => message.content);
 
-  if (cleanMessages.length === 0) {
-    return [];
-  }
+  if (cleanMessages.length === 0) return [];
 
   const selected = [];
   let charCount = 0;
@@ -101,6 +97,7 @@ const selectConversationHistory = (messages, query) => {
 
   const selectedIndexes = new Set(selected.map((message) => message.index));
   const queryTerms = tokenize(query);
+
   const scoredOlderMessages = cleanMessages
     .filter((message) => !selectedIndexes.has(message.index))
     .map((message) => {
@@ -117,14 +114,9 @@ const selectConversationHistory = (messages, query) => {
   if (isMemoryQuery(query) && scoredOlderMessages.length === 0) {
     for (let index = cleanMessages.length - 1; index >= 0; index -= 1) {
       const message = cleanMessages[index];
-      if (selectedIndexes.has(message.index) || !isMemoryFact(message.content)) {
-        continue;
-      }
-
+      if (selectedIndexes.has(message.index) || !isMemoryFact(message.content)) continue;
       scoredOlderMessages.push(message);
-      if (scoredOlderMessages.length >= 4) {
-        break;
-      }
+      if (scoredOlderMessages.length >= 4) break;
     }
   }
 
@@ -144,12 +136,14 @@ export const buildChatMessages = ({
   searchContext = "",
   attachmentContext = "",
   queryType = "KNOWLEDGE",
-  voiceGender = "male"
+  voiceGender = "male",
+  emotion = "neutral"
 }) => {
   const memoryFacts = extractMemoryFacts(chatMessages);
   const resolvedProfileFacts = Array.isArray(memoryContext?.profileFacts) && memoryContext.profileFacts.length > 0
     ? memoryContext.profileFacts
     : profileFacts;
+
   const durableFacts = (resolvedProfileFacts || [])
     .map((fact) => {
       if (typeof fact === "string") return fact;
@@ -157,6 +151,7 @@ export const buildChatMessages = ({
     })
     .filter(Boolean)
     .slice(0, DEFAULT_MEMORY_FACT_LIMIT);
+
   const episodicSummaries = (memoryContext?.episodeSummaries || [])
     .map((episode) => {
       const topics = episode?.topics?.length ? ` Topics: ${episode.topics.join(", ")}.` : "";
@@ -164,64 +159,63 @@ export const buildChatMessages = ({
     })
     .filter(Boolean)
     .slice(0, 2);
+
   const mergedFacts = [...new Set([...durableFacts, ...memoryFacts])].slice(0, DEFAULT_MEMORY_FACT_LIMIT);
   const conversationHistory = selectConversationHistory(chatMessages, userMessage);
   const hasVisualInput = Boolean(currentUserMessage?.images?.length);
+
   const profileLabel = memoryContext?.profile?.name ? `${operatorName} (${memoryContext.profile.name})` : operatorName;
   const currentDate = new Date().toISOString().split("T")[0];
   const genderStyleLine = String(voiceGender || "male").toLowerCase() === "female"
-    ? "- If responding in Hindi, use feminine self-reference and agreement naturally (e.g., main taiyar hoon, main samajh sakti hoon)."
-    : "- If responding in Hindi, use masculine self-reference and agreement naturally (e.g., main taiyar hoon, main samajh sakta hoon).";
-  
+    ? "- If responding in Hindi, use feminine self-reference and agreement naturally."
+    : "- If responding in Hindi, use masculine self-reference and agreement naturally.";
+
   const systemParts = hasVisualInput
     ? [
         `You are SYNAPSE, a vision-capable AI assistant helping your operator, ${profileLabel}.`,
         `Current date: ${currentDate}.`,
-        "Vision Directives:",
-        "- The current user turn includes attached image data.",
-        "- Analyze the attached image directly.",
-        "- Do not say you cannot see images.",
-        "- Describe visible objects, text, layout, style, colors, and notable details grounded in the image.",
-        "- If something is unclear, state uncertainty briefly instead of inventing details.",
-        genderStyleLine
+        "Vision Rules (anti-hallucination):",
+        "- Analyze strictly what is visually present in the attached image(s).",
+        "- Never invent details that are not visible.",
+        "- If text is too small/blurred, say so and ask for a clearer image or a zoomed crop.",
+        "- If the user asks for something not visible, say it cannot be determined from this image.",
+        "",
+        "Required Output Format:",
+        "Step 1 — OBSERVATIONS (facts only, no interpretation): list visible elements with high confidence.",
+        "Step 2 — INTERPRETATION (clearly labeled): only if the user asked for it.",
+        "Step 3 — UNCERTAINTY: state unclear/unknown items explicitly.",
+        genderStyleLine,
+        `- The operator currently appears ${emotion || "neutral"}. Project a tone that reflects and acknowledges this state appropriately.`
       ]
     : [
-        `You are SYNAPSE, a high-fidelity AI assistant helping your operator, ${profileLabel}.`,
+        `You are SYNAPSE, a professional local AI assistant helping your operator, ${profileLabel}.`,
         `Current date: ${currentDate}.`,
-        "Core Directives:",
-        "- Maintain a natural, helpful, and professional tone.",
-        "- Be conversational for greetings and casual chat.",
-        "- Use conversation history for continuity and memory facts for stable user details.",
-        genderStyleLine
+        "Core Rules:",
+        "- Answer the user's question in the first 1–2 sentences.",
+        "- Never start with filler like \"Certainly\", \"Great question\", or \"Of course\".",
+        "- Never end with filler like \"Hope this helps\".",
+        "- If unsure, say so early and ask a clarifying question.",
+        "- Do not invent facts or memories.",
+        "",
+        "Style by Task Type:",
+        "- GREETING/CASUAL: concise, friendly, max 3 short paragraphs.",
+        "- CODE: provide correct runnable code first, then a short explanation and next steps.",
+        "- REASONING/KNOWLEDGE: structured bullets/headings, state assumptions, keep it practical.",
+        genderStyleLine,
+        `- The operator currently appears ${emotion || "neutral"}. Project a tone that reflects and acknowledges this state appropriately.`
       ];
 
-  if (hasVisualInput) {
-    if (mergedFacts.length > 0) {
-      systemParts.push("", "Known Facts about Operator:", ...mergedFacts.map((fact) => `- ${fact}`));
-    }
-  }
-
-  if (!hasVisualInput && (queryType === "KNOWLEDGE" || ragContext || searchContext)) {
+  if (!hasVisualInput && (queryType === "REASONING" || queryType === "KNOWLEDGE" || ragContext || searchContext)) {
     systemParts.push(
-      "Knowledge Integration Rules:",
-      "- Prefer current web/search context over background model memory for time-sensitive topics.",
-      "- Use retrieved knowledge and search results only when they are relevant.",
-      "- Treat knowledge questions as freshness-sensitive when current web data is present.",
-      "- When search context is present, anchor claims in it instead of answering from stale prior knowledge.",
-      "- If current verification is missing for a time-sensitive claim, explicitly say it could not be verified live.",
-      "- Proactively provide direct URLs, video links, and source citations found in search results.",
-      "- If the query is factual and no data is found in context or training, admit it.",
-      "- Do not invent facts or memories.",
       "",
-      "Response Structure (for Knowledge Queries):",
-      "1. Comprehensive Analysis: Provide a detailed, structured, and well-formatted answer.",
-      "2. 🔗 Related Resources: List useful links, videos, or articles found in context/search.",
-      "3. ❓ Contextual FAQs: Suggest 2-3 most relevant follow-up questions the user might have.",
-      "4. 💡 Intelligence Insight: Provide unique, high-value additional info if available."
+      "Knowledge Integration:",
+      "- Use RAG/search context only if relevant.",
+      "- If web search context is present, prefer it for time-sensitive claims.",
+      "- If the user asks for current/latest info but no search context is present, say it is not verified live."
     );
   }
 
-  if (!hasVisualInput && mergedFacts.length > 0) {
+  if (mergedFacts.length > 0) {
     systemParts.push("", "Known Facts about Operator:", ...mergedFacts.map((fact) => `- ${fact}`));
   }
 
@@ -230,11 +224,11 @@ export const buildChatMessages = ({
   }
 
   if (!hasVisualInput && ragContext) {
-    systemParts.push("", "Retrieved Knowledge Context:", truncate(ragContext, 6000));
+    systemParts.push("", "Retrieved Context:", truncate(ragContext, 5000));
   }
 
   if (!hasVisualInput && searchContext) {
-    systemParts.push("", "Latest Information (Web Search):", truncate(searchContext, 4000));
+    systemParts.push("", "Web Search Context:", truncate(searchContext, 3500));
   }
 
   if (!hasVisualInput && attachmentContext) {
@@ -245,7 +239,7 @@ export const buildChatMessages = ({
     ? {
         role: "user",
         content: hasVisualInput
-          ? `Attached image analysis request:\n${currentUserMessage.content || userMessage || "Describe the attached image."}`
+          ? `User question:\n${currentUserMessage.content || userMessage || "Describe the attached image."}`
           : (currentUserMessage.content || ""),
         ...(currentUserMessage.images ? { images: currentUserMessage.images } : {})
       }
@@ -257,3 +251,5 @@ export const buildChatMessages = ({
     ...(currentTurn ? [currentTurn] : [])
   ];
 };
+
+export default { buildChatMessages };

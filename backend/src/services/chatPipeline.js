@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import fsp from "fs/promises";
 import Chat from "../models/Chat.js";
 import { generateResponseStream } from "./llm.js";
 import { getRelevantDocs } from "../rag/retriever.js";
@@ -16,10 +17,13 @@ import { queryMemoryContext } from "../memory/memoryRouter.js";
 import { classifyQuery, shouldUseRAG, resolveModelPreference } from "./chatRouter.js";
 import { generalCache, searchCache, getCacheKey } from "./cache.js";
 import config from "../config/env.js";
+import perceptionService from "./perceptionService.js";
 
-const SEARCH_HINT_PATTERNS = [
-  /\bsearch\b/i, /\blatest\b/i, /\btoday\b/i, /\bcurrent\b/i, /\bnews\b/i, /\bnow\b/i,
-  /\blink\b/i, /\burl\b/i, /\bvideo\b/i, /\btutorial\b/i, /\brecommend\b/i, /\bbest\b/i
+const WEB_SEARCH_HINT_PATTERNS = [
+  /\b(search|web|internet)\b/i,
+  /\b(latest|today|current|news|now|updated)\b/i,
+  /\b(link|url|source|sources|cite|citation|official)\b/i,
+  /\b(video|tutorial)\b/i
 ];
 const CURRENT_DATA_PATTERNS = [
   /\b(weather|forecast|temperature|rain|storm)\b/i,
@@ -30,14 +34,14 @@ const CURRENT_DATA_PATTERNS = [
   /\b(hotspot|hotspots|war|conflict|geopolitics|geopolitical)\b/i
 ];
 
-const shouldSearchInternet = ({ message, queryType, actualFileType, hasImages = false }) => {
+const shouldSearchInternet = ({ message, actualFileType, hasImages = false }) => {
   const text = String(message || "");
 
   if (actualFileType === "image" || actualFileType === "file" || hasImages) {
     return false;
   }
 
-  if (SEARCH_HINT_PATTERNS.some((pattern) => pattern.test(text))) {
+  if (WEB_SEARCH_HINT_PATTERNS.some((pattern) => pattern.test(text))) {
     return true;
   }
 
@@ -45,7 +49,7 @@ const shouldSearchInternet = ({ message, queryType, actualFileType, hasImages = 
     return true;
   }
 
-  return queryType === "KNOWLEDGE";
+  return false;
 };
 
 const shouldGeneratePdfReport = (message) => {
@@ -102,24 +106,82 @@ const resolveUploadedFilePath = (fileUrl) => {
 };
 
 const fileExists = (filepath) => Boolean(filepath && fs.existsSync(filepath));
-const STREAM_TTS_MIN_CHARS_INITIAL = 30;
-const STREAM_TTS_MIN_CHARS = 65;
-const STREAM_TTS_MAX_BUFFER = 420;
+const STREAM_TTS_MIN_CHARS_INITIAL = parseInt(process.env.TTS_STREAM_MIN_CHARS_INITIAL || "80", 10) || 80;
+const STREAM_TTS_MIN_CHARS = parseInt(process.env.TTS_STREAM_MIN_CHARS || "140", 10) || 140;
+const STREAM_TTS_MAX_BUFFER = parseInt(process.env.TTS_STREAM_MAX_BUFFER || "520", 10) || 520;
+const STREAM_TTS_MAX_INFLIGHT = parseInt(process.env.TTS_STREAM_MAX_INFLIGHT || "2", 10) || 2;
 
-const imageUrlToBase64 = (imageUrl) => {
-  const filepath = resolveUploadedFilePath(imageUrl);
-  if (!fileExists(filepath)) {
-    return null;
+const splitAtWordBoundary = (text, maxLen) => {
+  const clean = String(text || "").trim();
+  if (clean.length <= maxLen) return [clean];
+
+  const parts = [];
+  let remaining = clean;
+  while (remaining.length > maxLen) {
+    let sliceLen = maxLen;
+    const lastSpace = remaining.lastIndexOf(" ", maxLen);
+    if (lastSpace > Math.floor(maxLen * 0.6)) {
+      sliceLen = lastSpace;
+    }
+    const head = remaining.slice(0, sliceLen).trim();
+    remaining = remaining.slice(sliceLen).trim();
+    if (head) parts.push(head);
   }
-  return fs.readFileSync(filepath).toString("base64");
+  if (remaining) parts.push(remaining);
+  return parts;
 };
 
-const localImagePathToBase64 = (localPath) => {
-  if (!fileExists(localPath)) {
-    return null;
-  }
+let sharpLoaderPromise = null;
+const getSharp = async () => {
+  if (sharpLoaderPromise) return sharpLoaderPromise;
+  sharpLoaderPromise = (async () => {
+    try {
+      const mod = await import("sharp");
+      return mod?.default || mod;
+    } catch {
+      return null;
+    }
+  })();
+  return sharpLoaderPromise;
+};
 
-  return fs.readFileSync(localPath).toString("base64");
+const VISION_IMAGE_MAX_SIDE = parseInt(process.env.VISION_IMAGE_MAX_SIDE || "1024", 10) || 1024;
+
+const maybeResizeImageBuffer = async (buffer) => {
+  const sharp = await getSharp();
+  if (!sharp) return buffer;
+
+  try {
+    return await sharp(buffer)
+      .rotate()
+      .resize({
+        width: VISION_IMAGE_MAX_SIDE,
+        height: VISION_IMAGE_MAX_SIDE,
+        fit: "inside",
+        withoutEnlargement: true
+      })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+  } catch {
+    return buffer;
+  }
+};
+
+const fileToVisionBase64 = async (filepath) => {
+  if (!fileExists(filepath)) return null;
+  const buffer = await fsp.readFile(filepath);
+  const resized = await maybeResizeImageBuffer(buffer);
+  return resized.toString("base64");
+};
+
+const imageUrlToBase64 = async (imageUrl) => {
+  const filepath = resolveUploadedFilePath(imageUrl);
+  return await fileToVisionBase64(filepath);
+};
+
+const localImagePathToBase64 = async (localPath) => {
+  if (!localPath) return null;
+  return await fileToVisionBase64(localPath);
 };
 
 const extractSpeakableSegments = (buffer = "", minChars = STREAM_TTS_MIN_CHARS) => {
@@ -140,7 +202,12 @@ const extractSpeakableSegments = (buffer = "", minChars = STREAM_TTS_MIN_CHARS) 
     
     if (foundChunk.trim().length >= minChars) {
       const segment = foundChunk.replace(/\s+/g, " ").trim();
-      segments.push(segment);
+      const split = splitAtWordBoundary(segment, STREAM_TTS_MAX_BUFFER);
+      for (const part of split) {
+        if (!part) continue;
+        const safePart = part + (/[.!?,;:]$/.test(part) ? "" : ",");
+        segments.push(safePart);
+      }
       remaining = remaining.slice(foundChunk.length);
     } else {
       break;
@@ -165,25 +232,74 @@ const extractSpeakableSegments = (buffer = "", minChars = STREAM_TTS_MIN_CHARS) 
 
 const createStreamingTts = ({ socket, voice, abortSignal }) => {
   let buffer = "";
-  let queue = Promise.resolve();
   let emittedAny = false;
   let queuedAny = false;
+  let seq = 0;
+  let nextToEmit = 0;
+  const resultsBySeq = new Map();
+  let inFlight = 0;
+  const waiters = [];
 
-  const enqueue = (text) => {
-    queuedAny = true;
-    const ttsPromise = generateTTS(text, voice).catch((err) => {
-      console.warn("Streaming TTS chunk failed:", err.message);
-      return null;
+  const acquire = () =>
+    new Promise((resolve) => {
+      if (inFlight < STREAM_TTS_MAX_INFLIGHT) {
+        inFlight += 1;
+        resolve();
+        return;
+      }
+      waiters.push(resolve);
     });
 
-    queue = queue.then(async () => {
-      if (abortSignal?.aborted) return;
-      const audioUrl = await ttsPromise;
+  const release = () => {
+    inFlight = Math.max(0, inFlight - 1);
+    if (waiters.length > 0 && inFlight < STREAM_TTS_MAX_INFLIGHT) {
+      inFlight += 1;
+      const resolve = waiters.shift();
+      resolve?.();
+    }
+  };
+
+  const tryEmitReady = () => {
+    while (resultsBySeq.has(nextToEmit)) {
+      const audioUrl = resultsBySeq.get(nextToEmit);
+      resultsBySeq.delete(nextToEmit);
+      nextToEmit += 1;
+
+      if (abortSignal?.aborted) {
+        continue;
+      }
+
       if (audioUrl) {
         emittedAny = true;
         socket.emit("audio:ready", { url: audioUrl });
       }
-    });
+    }
+  };
+
+  const enqueue = (text) => {
+    queuedAny = true;
+    const mySeq = seq++;
+
+    void (async () => {
+      await acquire();
+      try {
+        if (abortSignal?.aborted) {
+          resultsBySeq.set(mySeq, null);
+          tryEmitReady();
+          return;
+        }
+
+        const audioUrl = await generateTTS(text, voice).catch((err) => {
+          console.warn("Streaming TTS chunk failed:", err.message);
+          return null;
+        });
+
+        resultsBySeq.set(mySeq, audioUrl);
+        tryEmitReady();
+      } finally {
+        release();
+      }
+    })();
   };
 
   return {
@@ -204,17 +320,26 @@ const createStreamingTts = ({ socket, voice, abortSignal }) => {
           enqueue(tail);
         }
       }
-      await queue;
+
+      // Wait until all generated (or failed) segments up to `seq` have been emitted/handled.
+      const expected = seq;
+      while (!abortSignal?.aborted && nextToEmit < expected) {
+        await new Promise((r) => setTimeout(r, 40));
+      }
       return emittedAny;
     }
   };
 };
 
-const buildImagePayload = (imageUrls = []) =>
-  imageUrls
-    .map((imageUrl) => imageUrlToBase64(imageUrl))
-    .filter(Boolean)
-    .slice(0, 3);
+const buildImagePayload = async (imageUrls = []) => {
+  const urls = Array.isArray(imageUrls) ? imageUrls.filter(Boolean).slice(0, 3) : [];
+  const payload = [];
+  for (const url of urls) {
+    const b64 = await imageUrlToBase64(url);
+    if (b64) payload.push(b64);
+  }
+  return payload;
+};
 
 const buildAttachmentContext = async (actualFileType, fileUrl) => {
   if (!fileUrl) return "";
@@ -378,150 +503,158 @@ export const processAgentChatTurn = async ({
   userId,
   modelPreference,
   customModel,
+  voice,
   abortSignal
 }) => {
   const task = plan.tasks[0];
   const runId = `chat_agent_${Date.now()}`;
 
-  socket.emit("chat:reply:start");
-  socket.emit("agent:thinking", {
-    runId,
-    step: "plan",
-    message: plan.summary || `Preparing ${task.tool}`
-  });
-  socket.emit("agent:tool:start", {
-    runId,
-    tool: task.tool,
-    params: task.params
-  });
 
-  const execution = await executeTool({
-    toolName: task.tool,
-    params: task.params,
-    context: {
-      io,
-      socket,
-      userId,
-      sessionId: String(chatId),
-      projectRoot: process.cwd(),
-      userContext: {}
-    }
-  });
 
-  if (execution.status === "needs_confirmation") {
-    socket.emit("agent:confirm:req", {
+  try {
+    socket.emit("chat:reply:start");
+    socket.emit("agent:thinking", {
+      runId,
+      step: "plan",
+      message: plan.summary || `Preparing ${task.tool}`
+    });
+    socket.emit("agent:tool:start", {
       runId,
       tool: task.tool,
+      params: task.params
+    });
+
+    const execution = await executeTool({
+      toolName: task.tool,
       params: task.params,
-      risk: execution.tool?.risk || "high"
+      context: {
+        io,
+        socket,
+        userId,
+        sessionId: String(chatId),
+        projectRoot: process.cwd(),
+        userContext: {}
+      }
     });
-    const confirmMessage = `This action needs confirmation before I can continue: ${task.tool}.`;
-    socket.emit("chat:reply:chunk", { chunk: confirmMessage });
-    socket.emit("chat:reply:end");
-    chat.addMessage("assistant", confirmMessage);
-    await chat.save();
-    return;
-  }
 
-  if (execution.status === "denied") {
-    socket.emit("agent:tool:error", {
-      runId,
-      tool: task.tool,
-      error: execution.policy.reason
-    });
-    socket.emit("chat:reply:chunk", { chunk: execution.policy.reason });
-    socket.emit("chat:reply:end");
-    chat.addMessage("assistant", execution.policy.reason, { isError: true });
-    await chat.save();
-    return;
-  }
-
-  socket.emit("agent:tool:result", {
-    runId,
-    tool: task.tool,
-    output: execution.result?.output ?? execution.result
-  });
-  if (execution.result?.metadata?.imageUrl) {
-    socket.emit("chat:reply:file", {
-      type: "image",
-      url: execution.result.metadata.imageUrl,
-      name: execution.result.metadata.fileName || "screenshot.png"
-    });
-  }
-
-  if (task.tool === "screenshot" && plan.analysisMode === "vision" && execution.result?.metadata?.filePath) {
-    const screenshotBase64 = localImagePathToBase64(execution.result.metadata.filePath);
-    if (!screenshotBase64) {
-      throw new Error("Screenshot was captured but could not be read for analysis");
+    if (execution.status === "needs_confirmation") {
+      socket.emit("agent:confirm:req", {
+        runId,
+        tool: task.tool,
+        params: task.params,
+        risk: execution.tool?.risk || "high"
+      });
+      const confirmMessage = `This action needs confirmation before I can continue: ${task.tool}.`;
+      socket.emit("chat:reply:chunk", { chunk: confirmMessage });
+      socket.emit("chat:reply:end");
+      chat.addMessage("assistant", confirmMessage);
+      await chat.save();
+      return;
     }
 
-    socket.emit("chat:reply:chunk", { chunk: "Captured your screen. Analyzing it now...\n\n" });
+    if (execution.status === "denied") {
+      socket.emit("agent:tool:error", {
+        runId,
+        tool: task.tool,
+        error: execution.policy.reason
+      });
+      socket.emit("chat:reply:chunk", { chunk: execution.policy.reason });
+      socket.emit("chat:reply:end");
+      chat.addMessage("assistant", execution.policy.reason, { isError: true });
+      await chat.save();
+      return;
+    }
 
-    const memoryContext = await queryMemoryContext({
-      userId,
-      query: plan.originalMessage || "Analyze my screen"
+    socket.emit("agent:tool:result", {
+      runId,
+      tool: task.tool,
+      output: execution.result?.output ?? execution.result
     });
-    const visionMessages = buildChatMessages({
-      chatMessages: chat.messages.slice(0, -1),
-      userMessage: plan.originalMessage || "Analyze my screen",
-      memoryContext,
-      currentUserMessage: {
-        content: `${plan.originalMessage || "Analyze this captured screen."}\nFocus on visible UI, text, code, warnings, and likely issues if any.`,
-        images: [screenshotBase64]
-      },
-      operatorName: process.env.OPERATOR_NAME || "Operator",
-      queryType: "KNOWLEDGE",
-      voiceGender: voice || "male"
-    });
-    const visionModel = resolveModelPreference({
-      preference: modelPreference,
-      queryType: "KNOWLEDGE",
-      hasImages: true,
-      customModel
-    });
+    if (execution.result?.metadata?.imageUrl) {
+      socket.emit("chat:reply:file", {
+        type: "image",
+        url: execution.result.metadata.imageUrl,
+        name: execution.result.metadata.fileName || "screenshot.png"
+      });
+    }
 
-    const analysisReply = await generateResponseStream(
-      visionMessages,
-      (chunk) => {
-        socket.emit("chat:reply:chunk", { chunk });
-      },
-      abortSignal,
-      visionModel
-    );
+    if (task.tool === "screenshot" && plan.analysisMode === "vision" && execution.result?.metadata?.filePath) {
+      const screenshotBase64 = await localImagePathToBase64(execution.result.metadata.filePath);
+      if (!screenshotBase64) {
+        throw new Error("Screenshot was captured but could not be read for analysis");
+      }
 
+      socket.emit("chat:reply:chunk", { chunk: "Captured your screen. Analyzing it now...\n\n" });
+
+      const memoryContext = await queryMemoryContext({
+        userId,
+        query: plan.originalMessage || "Analyze my screen"
+      });
+      const visionMessages = buildChatMessages({
+        chatMessages: chat.messages.slice(0, -1),
+        userMessage: plan.originalMessage || "Analyze my screen",
+        memoryContext,
+        currentUserMessage: {
+          content: `${plan.originalMessage || "Analyze this captured screen."}\nFocus on visible UI, text, code, warnings, and likely issues if any.`,
+          images: [screenshotBase64]
+        },
+        operatorName: process.env.OPERATOR_NAME || "Operator",
+        queryType: "VISION",
+        voiceGender: voice || "male",
+        emotion: perceptionService.getEmotion()
+      });
+      const visionModel = resolveModelPreference({
+        preference: modelPreference,
+        queryType: "VISION",
+        hasImages: true,
+        customModel
+      });
+
+      const analysisReply = await generateResponseStream(
+        visionMessages,
+        (chunk) => {
+          socket.emit("chat:reply:chunk", { chunk });
+        },
+        abortSignal,
+        visionModel
+      );
+
+      socket.emit("agent:done", {
+        runId,
+        success: true,
+        tool: task.tool,
+        result: execution.result,
+        analysis: true
+      });
+      socket.emit("chat:reply:end");
+
+      chat.addMessage(
+        "assistant",
+        `${analysisReply}\n\nCaptured image: ${execution.result.metadata.imageUrl}`
+      );
+      await chat.save();
+      await upsertEpisodeFromChat({ chat });
+      return;
+    }
+
+    const formattedOutput = formatAgentOutput(task.tool, execution.result);
+    const reply = `I handled that with the \`${task.tool}\` tool.\n\n${formattedOutput}`;
+
+    socket.emit("chat:reply:chunk", { chunk: reply });
     socket.emit("agent:done", {
       runId,
       success: true,
       tool: task.tool,
-      result: execution.result,
-      analysis: true
+      result: execution.result
     });
     socket.emit("chat:reply:end");
 
-    chat.addMessage(
-      "assistant",
-      `${analysisReply}\n\nCaptured image: ${execution.result.metadata.imageUrl}`
-    );
+    chat.addMessage("assistant", reply);
     await chat.save();
     await upsertEpisodeFromChat({ chat });
-    return;
+  } finally {
+
   }
-
-  const formattedOutput = formatAgentOutput(task.tool, execution.result);
-  const reply = `I handled that with the \`${task.tool}\` tool.\n\n${formattedOutput}`;
-
-  socket.emit("chat:reply:chunk", { chunk: reply });
-  socket.emit("agent:done", {
-    runId,
-    success: true,
-    tool: task.tool,
-    result: execution.result
-  });
-  socket.emit("chat:reply:end");
-
-  chat.addMessage("assistant", reply);
-  await chat.save();
-  await upsertEpisodeFromChat({ chat });
 };
 
 export const processStandardChatTurn = async ({
@@ -538,156 +671,170 @@ export const processStandardChatTurn = async ({
   voice,
   abortSignal
 }) => {
-  const queryType = classifyQuery(trimmedMessage);
-  const isRAGRequired = shouldUseRAG(queryType);
-  const imagePayload = buildImagePayload(uploadedImageUrls);
-  const hasImages = imagePayload.length > 0 || actualFileType === "image";
-  const selectedModel = resolveModelPreference({
-    preference: modelPreference,
-    queryType,
-    hasImages,
-    customModel
-  });
+  try {
+    const hasUserImages = (Array.isArray(uploadedImageUrls) && uploadedImageUrls.length > 0) || actualFileType === "image";
+    const queryType = classifyQuery(trimmedMessage, { hasImages: hasUserImages });
 
-  let ragContext = "";
-  if (isRAGRequired) {
-    const ragKey = getCacheKey("rag", trimmedMessage);
-    if (generalCache.has(ragKey)) {
-      ragContext = generalCache.get(ragKey);
-    } else {
+    const shortWordCount = String(trimmedMessage || "").trim().split(/\s+/).filter(Boolean).length;
+    const isShortMessage = shortWordCount < 8;
+    const isRAGRequired = shouldUseRAG(queryType) && !isShortMessage && !hasUserImages;
+
+    const selectedModel = resolveModelPreference({
+      preference: modelPreference,
+      queryType,
+      hasImages: hasUserImages,
+      customModel
+    });
+
+
+
+    socket.emit("chat:reply:start");
+    socket.emit("chat:model", { preference: modelPreference || "auto", model: selectedModel, queryType });
+
+    const imagePayload = hasUserImages ? await buildImagePayload(uploadedImageUrls) : [];
+    const hasImages = imagePayload.length > 0 || actualFileType === "image";
+
+    let ragContext = "";
+    if (isRAGRequired) {
+      const ragKey = getCacheKey("rag", trimmedMessage);
+      if (generalCache.has(ragKey)) {
+        ragContext = generalCache.get(ragKey);
+      } else {
+        try {
+          ragContext = await getRelevantDocs(trimmedMessage);
+          if (ragContext) generalCache.set(ragKey, ragContext);
+        } catch (ragErr) {
+          console.warn("RAG retrieval failed during socket chat:", ragErr.message);
+        }
+      }
+    }
+
+    const attachmentContext = await buildAttachmentContext(actualFileType, fileUrl);
+
+    let searchContext = "";
+    if (shouldSearchInternet({
+      message: trimmedMessage,
+      actualFileType,
+      hasImages
+    })) {
+      const searchKey = getCacheKey("search", trimmedMessage);
+      if (searchCache.has(searchKey)) {
+        searchContext = searchCache.get(searchKey);
+      } else {
+        socket.emit("chat:reply:chunk", { chunk: "Searching the web for real-time info..." });
+        const searchJob = await addChatJob({ type: "web-search", payload: { query: trimmedMessage } });
+        const results = await searchJob.waitUntilFinished();
+        if (results && results.length > 0) {
+          searchContext = results.map((result) => `${result.title}: ${result.snippet}`).join("\n\n");
+
+          searchCache.set(searchKey, searchContext);
+        }
+      }
+    }
+
+    const memoryContext = await queryMemoryContext({
+      userId,
+      query: trimmedMessage
+    });
+    const priorMessages = chat.messages.slice(0, -1);
+    const llmMessages = buildChatMessages({
+      chatMessages: priorMessages,
+      userMessage: trimmedMessage,
+      memoryContext,
+      currentUserMessage: {
+        content: trimmedMessage,
+        ...(imagePayload.length > 0 ? { images: imagePayload } : {})
+      },
+      operatorName: process.env.OPERATOR_NAME || "Operator",
+      ragContext,
+      searchContext,
+      attachmentContext,
+      queryType,
+      voiceGender: voice || "male",
+      emotion: perceptionService.getEmotion()
+    });
+
+    const streamingTts = config.tts.enabled ? createStreamingTts({
+      socket,
+      voice,
+      abortSignal
+    }) : null;
+
+    let fullReply = "";
+    fullReply = await generateResponseStream(
+      llmMessages,
+      (chunk) => {
+        socket.emit("chat:reply:chunk", { chunk });
+        streamingTts?.onChunk(chunk);
+      },
+      abortSignal,
+      selectedModel
+    );
+
+    const streamedAudio = streamingTts ? await streamingTts.flush() : false;
+
+    if (fullReply.trim()) {
+      chat.addMessage("assistant", fullReply);
+      await chat.save();
+      await upsertEpisodeFromChat({ chat });
+    }
+
+    if (shouldGeneratePdfReport(trimmedMessage) && fullReply.trim()) {
       try {
-        ragContext = await getRelevantDocs(trimmedMessage);
-        if (ragContext) generalCache.set(ragKey, ragContext);
-      } catch (ragErr) {
-        console.warn("RAG retrieval failed during socket chat:", ragErr.message);
-      }
-    }
-  }
+        const pdfPath = await generatePDF(fullReply, trimmedMessage.substring(0, 60) || "synapse_report");
+        const baseUrl = process.env.BASE_URL || "http://localhost:3001";
+        const pdfUrl = `${baseUrl}/${pdfPath.replace(/\\/g, "/")}`;
+        const pdfMessage = `\n\nPDF report generated: [Download PDF report](${pdfUrl})`;
 
-  const attachmentContext = await buildAttachmentContext(actualFileType, fileUrl);
+        socket.emit("chat:reply:chunk", { chunk: pdfMessage });
+        socket.emit("chat:reply:file", { type: "pdf", url: pdfUrl, name: path.basename(pdfPath) });
+        fullReply += pdfMessage;
 
-  let searchContext = "";
-  if (shouldSearchInternet({
-    message: trimmedMessage,
-    queryType,
-    actualFileType,
-    hasImages
-  })) {
-    const searchKey = getCacheKey("search", trimmedMessage);
-    if (searchCache.has(searchKey)) {
-      searchContext = searchCache.get(searchKey);
-    } else {
-      socket.emit("chat:reply:chunk", { chunk: "Searching the web for real-time info..." });
-      const searchJob = await addChatJob({ type: "web-search", payload: { query: trimmedMessage } });
-      const results = await searchJob.waitUntilFinished();
-      if (results && results.length > 0) {
-        searchContext = results.map((result) => `${result.title}: ${result.snippet}`).join("\n\n");
-        searchCache.set(searchKey, searchContext);
-      }
-    }
-  }
-
-  const memoryContext = await queryMemoryContext({
-    userId,
-    query: trimmedMessage
-  });
-  const priorMessages = chat.messages.slice(0, -1);
-  const llmMessages = buildChatMessages({
-    chatMessages: priorMessages,
-    userMessage: trimmedMessage,
-    memoryContext,
-    currentUserMessage: {
-      content: trimmedMessage,
-      ...(imagePayload.length > 0 ? { images: imagePayload } : {})
-    },
-    operatorName: process.env.OPERATOR_NAME || "Operator",
-    ragContext,
-    searchContext,
-    attachmentContext,
-    queryType,
-    voiceGender: voice || "male"
-  });
-
-  socket.emit("chat:reply:start");
-  socket.emit("chat:model", { preference: modelPreference || "auto", model: selectedModel, queryType });
-
-  const streamingTts = config.tts.enabled ? createStreamingTts({
-    socket,
-    voice,
-    abortSignal
-  }) : null;
-
-  let fullReply = await generateResponseStream(
-    llmMessages,
-    (chunk) => {
-      socket.emit("chat:reply:chunk", { chunk });
-      streamingTts?.onChunk(chunk);
-    },
-    abortSignal,
-    selectedModel
-  );
-
-  const streamedAudio = streamingTts ? await streamingTts.flush() : false;
-
-  if (fullReply.trim()) {
-    chat.addMessage("assistant", fullReply);
-    await chat.save();
-    await upsertEpisodeFromChat({ chat });
-  }
-
-  if (shouldGeneratePdfReport(trimmedMessage) && fullReply.trim()) {
-    try {
-      const pdfPath = await generatePDF(fullReply, trimmedMessage.substring(0, 60) || "synapse_report");
-      const baseUrl = process.env.BASE_URL || "http://localhost:3001";
-      const pdfUrl = `${baseUrl}/${pdfPath.replace(/\\/g, "/")}`;
-      const pdfMessage = `\n\nPDF report generated: [Download PDF report](${pdfUrl})`;
-
-      socket.emit("chat:reply:chunk", { chunk: pdfMessage });
-      socket.emit("chat:reply:file", { type: "pdf", url: pdfUrl, name: path.basename(pdfPath) });
-      fullReply += pdfMessage;
-
-      const updatedChat = await Chat.findById(chatId);
-      if (updatedChat && updatedChat.messages.length > 0) {
-        const lastMsg = updatedChat.messages[updatedChat.messages.length - 1];
-        if (lastMsg.role === "assistant") {
-          lastMsg.content = `${lastMsg.content}${pdfMessage}`;
-          await updatedChat.save();
+        const updatedChat = await Chat.findById(chatId);
+        if (updatedChat && updatedChat.messages.length > 0) {
+          const lastMsg = updatedChat.messages[updatedChat.messages.length - 1];
+          if (lastMsg.role === "assistant") {
+            lastMsg.content = `${lastMsg.content}${pdfMessage}`;
+            await updatedChat.save();
+          }
         }
+      } catch (pdfErr) {
+        console.error("PDF generation failed:", pdfErr.message);
+        socket.emit("chat:reply:chunk", { chunk: "\n\nPDF generation failed." });
       }
-    } catch (pdfErr) {
-      console.error("PDF generation failed:", pdfErr.message);
-      socket.emit("chat:reply:chunk", { chunk: "\n\nPDF generation failed." });
     }
-  }
 
-  socket.emit("chat:reply:end");
+    socket.emit("chat:reply:end");
 
-  if (actualFileType !== "audio" && fileUrl) {
-    deleteUploadedFile(fileUrl);
-  }
+    if (actualFileType !== "audio" && fileUrl) {
+      deleteUploadedFile(fileUrl);
+    }
 
-  if (shouldFetchReferenceImages(trimmedMessage, imagePayload.length > 0)) {
-    const imageJob = await addChatJob({ type: "image-search", payload: { query: trimmedMessage } });
-    const imageUrls = await imageJob.waitUntilFinished();
-    if (imageUrls && imageUrls.length > 0) {
-      socket.emit("chat:reply:images", { images: imageUrls });
+    if (shouldFetchReferenceImages(trimmedMessage, imagePayload.length > 0)) {
+      const imageJob = await addChatJob({ type: "image-search", payload: { query: trimmedMessage } });
+      const imageUrls = await imageJob.waitUntilFinished();
+      if (imageUrls && imageUrls.length > 0) {
+        socket.emit("chat:reply:images", { images: imageUrls });
 
-      const updatedChat = await Chat.findById(chatId);
-      if (updatedChat && updatedChat.messages.length > 0) {
-        const lastMsg = updatedChat.messages[updatedChat.messages.length - 1];
-        if (lastMsg.role === "assistant") {
-          lastMsg.imageUrls = [...(lastMsg.imageUrls || []), ...imageUrls];
-          await updatedChat.save();
+        const updatedChat = await Chat.findById(chatId);
+        if (updatedChat && updatedChat.messages.length > 0) {
+          const lastMsg = updatedChat.messages[updatedChat.messages.length - 1];
+          if (lastMsg.role === "assistant") {
+            lastMsg.imageUrls = [...(lastMsg.imageUrls || []), ...imageUrls];
+            await updatedChat.save();
+          }
         }
       }
     }
-  }
 
-  if (config.tts.enabled && !streamedAudio) {
-    const audioUrl = await generateTTS(fullReply, voice);
-    if (audioUrl) {
-      socket.emit("audio:ready", { url: audioUrl });
+    if (config.tts.enabled && !streamedAudio) {
+      const audioUrl = await generateTTS(fullReply, voice);
+      if (audioUrl) {
+        socket.emit("audio:ready", { url: audioUrl });
+      }
     }
+  } finally {
+
   }
 };
 

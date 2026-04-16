@@ -26,6 +26,7 @@ export const attachListeners = (io) => {
     chatEvents(io, socket, activeStreams);
     agentEvents(io, socket);
 
+
     socket.on("disconnect", (reason) => {
       logger.info({ socketId: socket.id, reason }, "Client disconnected");
       cleanupClient(socket.id, activeStreams);

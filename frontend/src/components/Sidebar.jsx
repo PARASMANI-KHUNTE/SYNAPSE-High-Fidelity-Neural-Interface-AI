@@ -2,12 +2,15 @@ import { MessageSquarePlus, Trash2, Settings2, LogOut, User2, Sparkles, ChevronD
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MemoryPanel from './MemoryPanel';
+import TriggerPanel from './TriggerPanel';
 
 const WINDOW_OPTIONS = [
   { key: "memory", label: "Memory" },
   { key: "statusRing", label: "Status Ring" },
   { key: "agentConsole", label: "Agent Console" },
-  { key: "sandbox", label: "Sandbox" }
+  { key: "agentDebug", label: "Debug Console" },
+  { key: "sandbox", label: "Sandbox" },
+  { key: "avatar", label: "Avatar / Vision" }
 ];
 
 const LAYOUT_PRESETS = [
@@ -31,6 +34,9 @@ export default function Sidebar({
   memoryEpisodes = [],
   memoryProfile = null,
   isConnected = false,
+  alerts = [],
+  onClearAlerts,
+  onDismissAlert,
   collapsed = false,
   onToggleCollapse
 }) {
@@ -104,7 +110,7 @@ export default function Sidebar({
               {sessions.map((chat, idx) => {
                 const isActive = activeChatId === chat._id;
                 return (
-                  <motion.div
+                    <motion.div
                     key={chat._id}
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -112,9 +118,12 @@ export default function Sidebar({
                     transition={{ duration: 0.15, delay: idx * 0.02 }}
                     className="group"
                   >
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onSelectChat(chat._id)}
-                      className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-150 ${
+                      onKeyDown={(e) => e.key === 'Enter' && onSelectChat(chat._id)}
+                      className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-150 cursor-pointer ${
                         isActive 
                           ? 'warm-card' 
                           : 'hover:bg-[var(--color-surface-soft)]'
@@ -134,7 +143,7 @@ export default function Sidebar({
                       >
                         <Trash2 size={14} />
                       </button>
-                    </button>
+                    </div>
                   </motion.div>
                 );
               })}
@@ -312,6 +321,14 @@ export default function Sidebar({
                     episodes={memoryEpisodes}
                     profile={memoryProfile}
                     isConnected={isConnected}
+                  />
+                </div>
+
+                <div className="pt-2" style={{ borderTop: '1px solid var(--color-background-soft)' }}>
+                  <TriggerPanel 
+                    alerts={alerts}
+                    onClear={onClearAlerts}
+                    onDismiss={onDismissAlert}
                   />
                 </div>
               </div>
