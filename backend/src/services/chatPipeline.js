@@ -126,20 +126,36 @@ const extractSpeakableSegments = (buffer = "", minChars = STREAM_TTS_MIN_CHARS) 
   let remaining = String(buffer || "");
 
   while (true) {
-    const match = remaining.match(/[\s\S]*?(?:[.!?]+(?:\s|$)|\n{2,})/);
-    if (!match) break;
-    const segment = match[0].replace(/\s+/g, " ").trim();
-    remaining = remaining.slice(match[0].length);
-    if (segment.length >= minChars) {
+    const regex = /[\s\S]*?(?:[.!?]+(?:\s|$)|\n{2,})/g;
+    let match;
+    let foundChunk = "";
+    
+    while ((match = regex.exec(remaining)) !== null) {
+      foundChunk += match[0];
+      if (foundChunk.trim().length >= minChars) {
+        break;
+      }
+    }
+    
+    if (foundChunk.trim().length >= minChars) {
+      const segment = foundChunk.replace(/\s+/g, " ").trim();
       segments.push(segment);
+      remaining = remaining.slice(foundChunk.length);
+    } else {
+      break;
     }
   }
 
   if (remaining.length > STREAM_TTS_MAX_BUFFER) {
-    const fallback = remaining.slice(0, STREAM_TTS_MAX_BUFFER).trim();
-    remaining = remaining.slice(STREAM_TTS_MAX_BUFFER);
-    if (fallback.length >= STREAM_TTS_MIN_CHARS) {
-      segments.push(fallback);
+    let sliceLen = STREAM_TTS_MAX_BUFFER;
+    const lastSpace = remaining.lastIndexOf(" ", STREAM_TTS_MAX_BUFFER);
+    if (lastSpace > 0) sliceLen = lastSpace;
+    
+    const fallback = remaining.slice(0, sliceLen).trim();
+    remaining = remaining.slice(sliceLen);
+    if (fallback.length >= 1) {
+      const safeFallback = fallback + (/[.!?,;:]$/.test(fallback) ? "" : ",");
+      segments.push(safeFallback);
     }
   }
 
@@ -153,19 +169,20 @@ const createStreamingTts = ({ socket, voice, abortSignal }) => {
   let queuedAny = false;
 
   const enqueue = (text) => {
-    queue = queue
-      .then(async () => {
-        if (abortSignal?.aborted) return;
-        const audioUrl = await generateTTS(text, voice);
-        if (audioUrl) {
-          emittedAny = true;
-          socket.emit("audio:ready", { url: audioUrl });
-        }
-      })
-      .catch((err) => {
-        console.warn("Streaming TTS chunk failed:", err.message);
-      });
     queuedAny = true;
+    const ttsPromise = generateTTS(text, voice).catch((err) => {
+      console.warn("Streaming TTS chunk failed:", err.message);
+      return null;
+    });
+
+    queue = queue.then(async () => {
+      if (abortSignal?.aborted) return;
+      const audioUrl = await ttsPromise;
+      if (audioUrl) {
+        emittedAny = true;
+        socket.emit("audio:ready", { url: audioUrl });
+      }
+    });
   };
 
   return {
@@ -182,7 +199,7 @@ const createStreamingTts = ({ socket, voice, abortSignal }) => {
     async flush() {
       if (!abortSignal?.aborted) {
         const tail = buffer.replace(/\s+/g, " ").trim();
-        if (tail.length >= 18) {
+        if (tail.length >= 2) {
           enqueue(tail);
         }
       }

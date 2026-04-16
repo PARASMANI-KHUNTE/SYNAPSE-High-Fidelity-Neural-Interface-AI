@@ -205,7 +205,7 @@ export default function Sidebar({
               transition={{ duration: 0.2, ease: 'easeInOut' }}
               className="overflow-hidden"
             >
-              <div className="p-4 flex flex-col gap-4" style={{ background: 'var(--color-surface-soft)' }}>
+              <div className="p-4 flex flex-col gap-4 overflow-y-auto hide-scrollbar max-h-[50vh]" style={{ background: 'var(--color-surface-soft)' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Auto Speak</p>
@@ -317,7 +317,7 @@ export default function Sidebar({
           )}
         </AnimatePresence>
 
-        <div className="px-3 pb-3 flex justify-center">
+        <div className="px-3 pb-4 flex justify-center">
           <button
             onClick={() => {
               if (collapsed) {
@@ -331,7 +331,7 @@ export default function Sidebar({
             style={{ color: 'var(--color-text-secondary)' }}
             title="Settings"
           >
-            <div className={`flex items-center ${!collapsed && 'gap-2.5'}`}>
+            <div className={`flex items-center ${!collapsed && 'gap-3.5'}`}>
               <Settings2 size={16} />
               {!collapsed && <span className="text-sm font-medium">Settings</span>}
             </div>

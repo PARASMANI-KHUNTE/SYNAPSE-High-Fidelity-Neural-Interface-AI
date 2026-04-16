@@ -295,7 +295,7 @@ function App() {
     audioRef.current = audio;
     const proceed = () => {
       if (mountedRef.current && playNextFnRef.current) {
-        setTimeout(() => playNextFnRef.current(), 20);
+        playNextFnRef.current();
       }
     };
     audio.onended = proceed;
@@ -593,9 +593,10 @@ function App() {
         if (autoSpeakEnabled && data?.url) {
           try {
             const audioUrl = normalizeMediaUrl(data.url);
-            const audio = new Audio(audioUrl);
-            audio.preload = "auto";
+            const audio = new Audio();
             audio.crossOrigin = "anonymous";
+            audio.preload = "auto";
+            audio.src = audioUrl;
             audioQueueRef.current.push(audio);
             if (!isSpeakingRef.current && playNextFnRef.current) playNextFnRef.current();
           } catch (err) {
