@@ -24,6 +24,7 @@ export const classifyRealityIntent = async (query) => {
   const URGENT_REALTIME_PATTERNS = [
     /\b(latest|current|news|today|now|price|weather|score|who is the current|breaking|recent|incident|happened|was there a|did .* happen|is there any)\b/i,
     /\b(search|look up|find online|research|check the web)\b/i,
+    /\b(this week|this month|releasing|release date|box office|now showing)\b/i,
   ];
 
   if (URGENT_REALTIME_PATTERNS.some(p => p.test(trimmed))) {
@@ -31,32 +32,31 @@ export const classifyRealityIntent = async (query) => {
   }
 
   // 2. LLM Classification (Adaptive Layer)
-  // We use a non-streaming, very short call to classify.
   const classificationPrompt = [
     {
       role: "system",
       content: `Analyze the user query and classify it as STATIC or REALTIME.
-REALTIME: If the query asks for current events, news, latest versions, real-time prices, people in office, or any information that could have changed recently. If the query implies a "recent" or "current" context, always choose REALTIME.
+REALTIME: If the query asks for current events, news, latest versions, real-time prices, people in office, movie releases, box office, or any information that could have changed recently.
 STATIC: If the query is a general knowledge question, greeting, coding task, or math problem.
-
 Respond with ONLY the word "STATIC" or "REALTIME".`
     },
     { role: "user", content: query }
   ];
 
+  let classificationResult = "";
   try {
-    const classification = await generateResponseStream(
+    await generateResponseStream(
       classificationPrompt,
-      null, // No chunk callback for classification
+      (chunk) => { classificationResult += chunk; },
       null,
-      process.env.OLLAMA_CASUAL_MODEL || "qwen2.5:7b" // Use a fast model
+      process.env.OLLAMA_CASUAL_MODEL || "qwen2.5:7b"
     );
 
-    const result = classification.trim().toUpperCase();
+    const result = classificationResult.trim().toUpperCase();
     return result.includes("REALTIME") ? "REALTIME" : "STATIC";
   } catch (error) {
-    console.warn("⚠️ RealityEngine LLM classification failed, falling back to STATIC:", error.message);
-    return "STATIC";
+    console.warn("⚠️ RealityEngine LLM classification failed:", error.message);
+    return trimmed.length > 30 ? "REALTIME" : "STATIC";
   }
 };
 
