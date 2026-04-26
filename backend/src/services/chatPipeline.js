@@ -20,6 +20,7 @@ import config from "../config/env.js";
 import perceptionService from "./perceptionService.js";
 import { resolveExternalData } from "./externalDataRouter.js";
 import { verifyClaims } from "./factVerification.js";
+import { evaluateQuality, shouldRequestCorrection } from "./qualityEvaluator.js";
 
 const WEB_SEARCH_HINT_PATTERNS = [
   /\b(search|web|internet)\b/i,
@@ -1044,6 +1045,46 @@ export const processStandardChatTurn = async ({
           confidence: verification.overallConfidence,
           verified: true,
           summary: verification.summary
+        });
+      }
+    }
+
+    const qualityEvaluation = evaluateQuality(fullReply, {
+      userQuery: trimmedMessage,
+      hasLiveData: liveDataRequired,
+      citationsCount: searchResults.length
+    });
+    
+    socket.emit("chat:quality", { 
+      score: qualityEvaluation.overallScore,
+      grade: qualityEvaluation.grade,
+      flags: qualityEvaluation.flags
+    });
+
+    if (qualityEvaluation.overallScore < 0.6 && searchResults.length > 0) {
+      emitPhase(socket, "improving", "🔧", "Attempting to improve response quality");
+      const retryPrompt = `The previous response had quality issues: ${qualityEvaluation.flags.join(", ")}. Please provide a more accurate, complete response to: ${trimmedMessage}`;
+      
+      const improvedReply = await generateResponseStream(
+        llmMessages,
+        (chunk) => socket.emit("chat:reply:chunk", { chunk }),
+        abortSignal,
+        selectedModel
+      );
+      
+      const improvedEvaluation = evaluateQuality(improvedReply, {
+        userQuery: trimmedMessage,
+        hasLiveData: liveDataRequired,
+        citationsCount: searchResults.length
+      });
+      
+      if (improvedEvaluation.overallScore > qualityEvaluation.overallScore) {
+        fullReply = improvedReply;
+        socket.emit("chat:quality", { 
+          score: improvedEvaluation.overallScore,
+          grade: improvedEvaluation.grade,
+          improved: true,
+          originalScore: qualityEvaluation.overallScore
         });
       }
     }
