@@ -35,6 +35,7 @@
 ### 🎨 Frontend Module Map (`/frontend`)
 - **`src/components`**: Glassmorphic UI library (Particles, Energy Ring, Sandbox Panel, Neural Input).
 - **`src/App.jsx`**: Central Neural Interface managing socket state, audio queues, and model preferences.
+- **Mobile responsive**: Sidebar becomes a drawer; chat + input adapt to small screens.
 
 ---
 

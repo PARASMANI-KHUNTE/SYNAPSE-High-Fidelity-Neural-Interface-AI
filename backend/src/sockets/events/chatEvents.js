@@ -19,12 +19,18 @@ export const chatEvents = (io, socket, activeStreams) => {
       chatId,
       message: rawMessage = "",
       voice,
+      voicePreference,
       fileUrl,
       fileType,
       images = [],
       modelPreference,
       customModel
     } = data;
+
+    const resolvedVoice = String(voicePreference || voice || socket.data?.voicePreference || "male").toLowerCase() === "female"
+      ? "female"
+      : "male";
+    socket.data.voicePreference = resolvedVoice;
 
     const abortController = new AbortController();
     activeStreams.set(socket.id, abortController);
@@ -81,7 +87,7 @@ export const chatEvents = (io, socket, activeStreams) => {
             userId,
             modelPreference,
             customModel,
-            voice,
+            voice: resolvedVoice,
             abortSignal: abortController.signal
           });
           return;
@@ -98,10 +104,13 @@ export const chatEvents = (io, socket, activeStreams) => {
         fileUrl,
         modelPreference,
         customModel,
-        voice,
+        voice: resolvedVoice,
         abortSignal: abortController.signal
       });
     } catch (err) {
+      if (abortController.signal.aborted || err?.name === "AbortError" || err?.type === "aborted") {
+        return;
+      }
       console.error("Chat Error:", err.message);
       socket.emit("chat:error", { message: err.message || "An error occurred while processing your request" });
     } finally {
@@ -112,6 +121,11 @@ export const chatEvents = (io, socket, activeStreams) => {
   socket.on("chat:stop", () => {
     cleanupClient(socket.id, activeStreams);
     socket.emit("chat:stopped");
+  });
+
+  socket.on("voice:update", ({ voice } = {}) => {
+    const nextVoice = String(voice || "").toLowerCase() === "female" ? "female" : "male";
+    socket.data.voicePreference = nextVoice;
   });
 
   socket.on("chat:feedback", async ({ chatId, messageId, feedback }) => {

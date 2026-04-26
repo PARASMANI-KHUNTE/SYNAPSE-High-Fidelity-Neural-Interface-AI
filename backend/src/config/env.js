@@ -13,7 +13,7 @@ const envSchema = z.object({
   DB_NAME: z.string().optional(),
 
   OLLAMA_BASE_URL: z.string().url("OLLAMA_BASE_URL must be a valid URL"),
-  OLLAMA_MODEL: z.string().default("llama3.2:1b"),
+  OLLAMA_MODEL: z.string().default("qwen2.5:7b"),
   OLLAMA_VISION_MODEL: z.string().default("llava"),
   OLLAMA_TIMEOUT: z.coerce.number().int().positive().default(120000),
   OLLAMA_MAX_RETRIES: z.coerce.number().int().min(1).max(10).default(3),
@@ -27,6 +27,14 @@ const envSchema = z.object({
   RAG_CHUNK_OVERLAP: z.coerce.number().int().min(0).max(1000).default(120),
   VECTORSTORE_PATH: z.string().default("./vectorstore"),
   EMBEDDING_MODEL: z.string().default("nomic-embed-text"),
+
+  NEWS_API_KEY: z.string().optional(),
+  NEWS_API_BASE_URL: z.string().url().optional(),
+  GNEWS_API_KEY: z.string().optional(),
+  GNEWS_API_BASE_URL: z.string().url().optional(),
+  TMDB_API_KEY: z.string().optional(),
+  TMDB_API_BASE_URL: z.string().url().optional(),
+  TMDB_REGION: z.string().optional(),
 
   JWT_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
@@ -105,6 +113,15 @@ const config = {
     timeout: env.OLLAMA_TIMEOUT,
     retries: env.OLLAMA_MAX_RETRIES,
     retryDelay: env.OLLAMA_RETRY_DELAY
+  },
+  integrations: {
+    newsApiKey: env.NEWS_API_KEY || "",
+    newsApiBaseUrl: env.NEWS_API_BASE_URL || "https://newsapi.org/v2",
+    gnewsApiKey: env.GNEWS_API_KEY || "",
+    gnewsApiBaseUrl: env.GNEWS_API_BASE_URL || "https://gnews.io/api/v4",
+    tmdbApiKey: env.TMDB_API_KEY || "",
+    tmdbApiBaseUrl: env.TMDB_API_BASE_URL || "https://api.themoviedb.org/3",
+    tmdbRegion: env.TMDB_REGION || "US"
   },
   sandbox: {
     enabled: String(env.SANDBOX_ENABLED).toLowerCase() !== "false",

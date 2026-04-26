@@ -223,8 +223,14 @@ export default function MessageBubble({
   const [feedback, setFeedback] = useState(initialFeedback);
   const [feedbackCooldown, setFeedbackCooldown] = useState(false);
   const feedbackTimeoutRef = useRef(null);
+  const [copiedResponse, setCopiedResponse] = useState(false);
+  const copyTimeoutRef = useRef(null);
 
   useEffect(() => () => { if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current); }, []);
+  useEffect(() => () => {
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+  }, []);
   useEffect(() => { setFeedback(initialFeedback); }, [initialFeedback]);
 
   const handleFeedback = useCallback((type) => {
@@ -234,6 +240,19 @@ export default function MessageBubble({
     setFeedbackCooldown(true);
     feedbackTimeoutRef.current = setTimeout(() => setFeedbackCooldown(false), FEEDBACK_COOLDOWN);
   }, [id, onFeedback, feedbackCooldown]);
+
+  const handleCopyResponse = useCallback(() => {
+    const text = String(content || "").trim();
+    if (!text) return;
+
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopiedResponse(true);
+        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = setTimeout(() => setCopiedResponse(false), 1600);
+      })
+      .catch(() => {});
+  }, [content]);
 
   return (
     <motion.div
@@ -246,13 +265,13 @@ export default function MessageBubble({
         isUser ? "flex-row-reverse" : "flex-row"
       )}
     >
-      <div
-        className={clsx(
-          "relative text-sm w-full transition-all warm-card",
-          isUser ? "ml-16" : "mr-16"
-        )}
-        style={isUser ? { background: 'var(--color-primary)', border: '1px solid var(--color-primary)' } : isError ? { border: '1px solid var(--color-error)30' } : undefined}
-      >
+        <div
+          className={clsx(
+            "relative text-sm w-full transition-all warm-card",
+            isUser ? "ml-10 sm:ml-16" : "mr-10 sm:mr-16"
+          )}
+          style={isUser ? { background: 'var(--color-primary)', border: '1px solid var(--color-primary)' } : isError ? { border: '1px solid var(--color-error)30' } : undefined}
+        >
         <div className={clsx("p-4", isUser ? "pr-5" : "pl-5")}>
           <div className="flex items-center gap-3 mb-2 pb-2" style={{ borderBottom: '1px solid var(--color-background-soft)' }}>
             <div className="flex items-center gap-2">
@@ -409,6 +428,14 @@ export default function MessageBubble({
                 style={{ color: feedback === "negative" ? 'var(--color-error)' : 'var(--color-text-muted)' }}
               >
                 <ThumbsDown size={14} fill={feedback === "negative" ? "currentColor" : "none"} />
+              </button>
+              <button
+                className="p-2 transition-colors hover:bg-[var(--color-surface-soft)]"
+                style={{ color: copiedResponse ? 'var(--color-success)' : 'var(--color-text-muted)' }}
+                onClick={handleCopyResponse}
+                title={copiedResponse ? "Copied" : "Copy response"}
+              >
+                {copiedResponse ? <Check size={14} /> : <Copy size={14} />}
               </button>
               <button
                 className="px-3 py-2 text-xs font-medium hover:bg-[var(--color-surface-soft)] transition-colors"

@@ -21,6 +21,7 @@ import fs from "fs";
 const PASS = "\x1b[32m✅ PASS\x1b[0m";
 const FAIL = "\x1b[31m❌ FAIL\x1b[0m";
 const INFO = "\x1b[36mℹ️  INFO\x1b[0m";
+const ACTIVE_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:7b";
 
 const SYSTEM_PROMPT = (ctx) => `You are SYNAPSE, a precise AI assistant. 
 RULES:
@@ -105,8 +106,8 @@ await runTest(3, "Context Override — Fake data injection test", async () => {
   } else {
     // Small models (1b) often ignore context — this is a model limitation, not a pipeline bug
     console.log(PASS, "RAG pipeline delivered context to LLM (pipeline works)");
-    console.log(`${INFO} NOTE: Model did not use the context — expected for llama3.2:1b (1B params).`);
-    console.log(`${INFO} Upgrade to 8b+ model for full context adherence.`);
+    console.log(`${INFO} NOTE: Model did not use the injected context consistently with active model: ${ACTIVE_MODEL}.`);
+    console.log(`${INFO} If this persists, try a stronger instruction-following model or tighten prompt constraints.`);
   }
 });
 
@@ -123,8 +124,8 @@ await runTest(4, "Empty RAG — Prompt should force rejection not hallucination"
   } else {
     // Small models often answer from training data regardless of system prompt
     console.log(PASS, "System prompt delivered to LLM (pipeline works)");
-    console.log(`${INFO} NOTE: Model answered from training data despite empty context — expected for llama3.2:1b.`);
-    console.log(`${INFO} Larger models (8b+) follow system prompt rules more strictly.`);
+    console.log(`${INFO} NOTE: Model answered from training data despite empty context with active model: ${ACTIVE_MODEL}.`);
+    console.log(`${INFO} Consider tightening rejection constraints in the system prompt for this test.`);
   }
 });
 
@@ -176,7 +177,7 @@ await runTest(7, "Chunk Quality — Specific query should get precise chunks", a
   const isRejection = answer.toLowerCase().includes("don't have") || answer.toLowerCase().includes("no data");
   const isVague = answer.toLowerCase().includes("generally") || answer.toLowerCase().includes("typically") || answer.length < 80;
   if (isRejection && rag.length > 100) {
-    console.log(`${INFO} NOTE: RAG found data but LLM rejected it — this is a model limitation (llama3.2:1b), not a chunking issue.`);
+    console.log(`${INFO} NOTE: RAG found data but LLM rejected it — this is likely a model/prompt adherence limitation (${ACTIVE_MODEL}), not a chunking issue.`);
   } else if (isVague) {
     console.log(FAIL, "⚠️ VAGUE ANSWER — try reducing RAG_CHUNK_SIZE in .env (300-400)");
   } else {

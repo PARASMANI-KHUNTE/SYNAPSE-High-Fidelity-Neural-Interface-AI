@@ -11,9 +11,13 @@ export const queryMemoryContext = async ({ userId, query = "" }) => {
     };
   }
 
+  const isMemoryHeavyQuery = /\b(remember|recall|about me|my profile|my preference|what do you know)\b/i.test(String(query || ""));
+  const profileLimit = isMemoryHeavyQuery ? 14 : 10;
+  const episodeLimit = isMemoryHeavyQuery ? 5 : 3;
+
   const [{ profile, facts }, episodes] = await Promise.all([
-    getProfileMemory({ userId, limit: 8 }),
-    getRelevantEpisodes({ userId, query, limit: 3 })
+    getProfileMemory({ userId, limit: profileLimit }),
+    getRelevantEpisodes({ userId, query, limit: episodeLimit })
   ]);
 
   const episodeSummaries = episodes.map((episode) => ({

@@ -43,9 +43,13 @@ const resolveStatus = ({ isTyping, pendingConfirmation, agentEvents = [] }) => {
 
 export default function ChatWindow({
   messages, isTyping, isWaitingReply, isSpeaking, operatorName, suggestion,
+  phaseStatus,
   onSendMessage, onStopMessage, onStopAudio, onFeedback, onRefine, onSuggest, clearSuggestion,
   modelPreference,
   onModelPreferenceChange,
+  customModel,
+  onCustomModelChange,
+  availableModels = [],
   onOpenSandbox,
   agentEvents = [],
   pendingAgentConfirmation = null,
@@ -94,11 +98,14 @@ export default function ChatWindow({
 
   const hasContent = messages.length > 0;
   const chatStatus = resolveStatus({ isTyping, pendingConfirmation: pendingConfirmation || pendingAgentConfirmation, agentEvents });
+  const phaseLabel = phaseStatus?.phase
+    ? `${phaseStatus.emoji || ""} ${phaseStatus.phase}${phaseStatus.detail ? ` - ${phaseStatus.detail}` : ""}`.trim()
+    : "";
 
   return (
     <div className="flex flex-col h-full relative w-full overflow-hidden">
       <div className="flex flex-col h-full w-full relative">
-        <div className="flex items-center gap-4 px-6 py-3" style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface)' }}>
+        <div className="flex items-center flex-wrap gap-3 px-4 md:px-6 py-3" style={{ borderBottom: '1px solid var(--color-background-soft)', background: 'var(--color-surface)' }}>
           <div className="flex items-center gap-2">
             <motion.div 
               className="w-7 h-7 rounded-full flex items-center justify-center"
@@ -123,9 +130,9 @@ export default function ChatWindow({
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
             {hasContent && (
-              <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-muted)' }}>
+              <span className="hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-muted)' }}>
                 {messages.length} message{messages.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -140,12 +147,17 @@ export default function ChatWindow({
                 Thinking...
               </span>
             )}
+            {phaseLabel && (
+              <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'var(--color-surface-soft)', color: 'var(--color-text-secondary)' }}>
+                {phaseLabel}
+              </span>
+            )}
           </div>
         </div>
 
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto px-4 flex flex-col hide-scrollbar"
+          className="flex-1 overflow-y-auto px-4 md:px-6 flex flex-col hide-scrollbar"
           onScroll={handleScroll}
         >
           {!hasContent && !isTyping ? (
@@ -176,7 +188,7 @@ export default function ChatWindow({
                 </p>
               </motion.div>
 
-              <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 px-4 md:px-0">
                 <FeatureCard
                   icon={Cpu}
                   title="Smart reasoning"
@@ -198,7 +210,7 @@ export default function ChatWindow({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-4 w-full max-w-3xl mx-auto pt-8 pb-32">
+            <div className="flex flex-col gap-4 w-full max-w-3xl mx-auto pt-8 pb-8">
               <AnimatePresence initial={false}>
                 {messages.map((msg, idx) => (
                   <MessageBubble
@@ -230,7 +242,7 @@ export default function ChatWindow({
                       style={{ background: 'var(--color-primary)' }}
                     />
                     <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      Processing...
+                      {phaseLabel || "Processing..."}
                     </span>
                   </div>
                 </div>
@@ -238,7 +250,7 @@ export default function ChatWindow({
             </div>
           )}
 
-          <div ref={bottomRef} className="h-40 shrink-0" />
+          <div ref={bottomRef} className="h-2 shrink-0" />
         </div>
 
         <AnimatePresence>
@@ -248,9 +260,9 @@ export default function ChatWindow({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 10 }}
               onClick={() => scrollToBottom("smooth")}
-              className="absolute z-30 p-2.5 rounded-full warm-card soft-shadow flex items-center justify-center hover:soft-shadow-lg transition-all"
+              className="absolute z-30 p-2.5 rounded-full warm-card soft-shadow flex items-center justify-center hover:soft-shadow-lg transition-all scroll-to-bottom-btn"
               style={{
-                bottom: '12rem', left: '50%', transform: 'translateX(-50%)',
+                left: '50%', transform: 'translateX(-50%)',
                 color: 'var(--color-primary)'
               }}
             >
@@ -260,9 +272,10 @@ export default function ChatWindow({
         </AnimatePresence>
 
         <div
-          className="absolute bottom-0 left-0 w-full px-4 pb-6 pt-12"
+          className="shrink-0 w-full px-3 md:px-4 pt-3 md:pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:pb-6"
           style={{
-            background: 'linear-gradient(to top, var(--color-background) 0%, var(--color-background) 40%, transparent 100%)',
+            background: 'var(--color-background)',
+            borderTop: '1px solid var(--color-background-soft)',
             zIndex: 20,
           }}
         >
@@ -277,6 +290,9 @@ export default function ChatWindow({
             clearSuggestion={clearSuggestion}
             modelPreference={modelPreference}
             onModelPreferenceChange={onModelPreferenceChange}
+            customModel={customModel}
+            onCustomModelChange={onCustomModelChange}
+            availableModels={availableModels}
             onOpenSandbox={onOpenSandbox}
             canRetryLastMessage={canRetryLastMessage}
             onRetryLastMessage={onRetryLastMessage}

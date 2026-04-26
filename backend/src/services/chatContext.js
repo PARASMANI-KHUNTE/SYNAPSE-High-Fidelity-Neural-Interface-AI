@@ -8,6 +8,23 @@ const DEFAULT_HISTORY_MESSAGE_LIMIT = readInt(process.env.CONTEXT_WINDOW_SIZE, 1
 const DEFAULT_HISTORY_CHAR_BUDGET = readInt(process.env.CONTEXT_CHAR_BUDGET, 8000);
 const DEFAULT_MEMORY_FACT_LIMIT = readInt(process.env.MEMORY_FACT_LIMIT, 8);
 
+const HIGH_PERFORMANCE_BEHAVIOR = [
+  "High-Performance Behavior:",
+  "- Be knowledgeable, friendly, and natural. Avoid robotic tone.",
+  "- Start with the direct answer first, then add key points only when helpful.",
+  "- Prefer concise, practical responses over long explanations.",
+  "- Keep topic continuity with the current conversation unless the user changes topic.",
+  "- If context is unclear, ask one short clarifying question.",
+  "- Identify user intent (question, action, explanation, casual) and adapt response style.",
+  "- Use memory only when it improves relevance; avoid unrelated recall.",
+  "- If external or up-to-date facts are required, rely on available retrieval/search context.",
+  "- Never fabricate titles, dates, releases, or events. If unverified, state that clearly.",
+  "- Never use phrases like 'as of my knowledge cutoff'.",
+  "- Do not fabricate facts. If uncertain, say so and suggest next steps.",
+  "- Stay on-topic and avoid unnecessary filler.",
+  "- Self-check before finalizing: relevance, clarity, conciseness, no hallucinations."
+];
+
 const STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "for", "from", "how",
   "i", "if", "in", "is", "it", "me", "my", "of", "on", "or", "so", "that", "the",
@@ -136,6 +153,8 @@ export const buildChatMessages = ({
   searchContext = "",
   attachmentContext = "",
   queryType = "KNOWLEDGE",
+  requiresLiveData = false,
+  liveDataAvailable = false,
   voiceGender = "male",
   emotion = "neutral"
 }) => {
@@ -174,6 +193,8 @@ export const buildChatMessages = ({
     ? [
         `You are SYNAPSE, a vision-capable AI assistant helping your operator, ${profileLabel}.`,
         `Current date: ${currentDate}.`,
+        ...HIGH_PERFORMANCE_BEHAVIOR,
+        "",
         "Vision Rules (anti-hallucination):",
         "- Analyze strictly what is visually present in the attached image(s).",
         "- Never invent details that are not visible.",
@@ -190,6 +211,8 @@ export const buildChatMessages = ({
     : [
         `You are SYNAPSE, a professional local AI assistant helping your operator, ${profileLabel}.`,
         `Current date: ${currentDate}.`,
+      ...HIGH_PERFORMANCE_BEHAVIOR,
+      "",
         "Core Rules:",
         "- Answer the user's question in the first 1–2 sentences.",
         "- Never start with filler like \"Certainly\", \"Great question\", or \"Of course\".",
@@ -213,6 +236,23 @@ export const buildChatMessages = ({
       "- If web search context is present, prefer it for time-sensitive claims.",
       "- If the user asks for current/latest info but no search context is present, say it is not verified live."
     );
+  }
+
+  if (!hasVisualInput && requiresLiveData) {
+    systemParts.push(
+      "",
+      "Real-Time Data Rules (strict):",
+      "- Do NOT claim you searched the web unless Web Search Context is present.",
+      "- If no Web Search Context is present, explicitly say you do not have verified live access right now.",
+      "- For live/news answers, use only Web Search Context for factual claims.",
+      "- Prioritize global-impact diversity across geopolitics, economy/markets, technology/science, and policy.",
+      "- Output concise bullets only in this format per item:",
+      "  Headline | Where | When | Source (URL)",
+      "- Include a short 'As of <date>' line before the list."
+    );
+    if (!liveDataAvailable) {
+      systemParts.push("- Since live data is unavailable for this turn, do not provide a fake live roundup.");
+    }
   }
 
   if (mergedFacts.length > 0) {

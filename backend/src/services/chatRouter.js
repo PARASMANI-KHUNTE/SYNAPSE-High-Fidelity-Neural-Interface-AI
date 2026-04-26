@@ -91,15 +91,15 @@ export const selectModel = (type, hasImages = false) => {
     return process.env.OLLAMA_REASON_MODEL || process.env.OLLAMA_CHAT_MODEL || "qwen2.5:7b";
   }
 
-  return process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b";
+  return process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "qwen2.5:7b";
 };
 
 export const getConfiguredModels = () => ({
   auto: "Auto",
-  chat: process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b",
+  chat: process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "qwen2.5:7b",
   code: process.env.OLLAMA_CODE_MODEL || "deepseek-coder:6.7b-instruct-q4_0",
   reasoning: process.env.OLLAMA_REASON_MODEL || "qwen2.5:7b",
-  casual: process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b",
+  casual: process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "qwen2.5:7b",
   vision: process.env.OLLAMA_VISION_MODEL || "llava"
 });
 

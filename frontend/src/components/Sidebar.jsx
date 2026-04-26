@@ -1,4 +1,4 @@
-import { MessageSquarePlus, Trash2, Settings2, LogOut, User2, Sparkles, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Eye, EyeOff } from 'lucide-react';
+import { MessageSquarePlus, Trash2, Settings2, LogOut, User2, Sparkles, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Eye, EyeOff, Sun, Moon, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MemoryPanel from './MemoryPanel';
@@ -7,10 +7,7 @@ import TriggerPanel from './TriggerPanel';
 const WINDOW_OPTIONS = [
   { key: "memory", label: "Memory" },
   { key: "statusRing", label: "Status Ring" },
-  { key: "agentConsole", label: "Agent Console" },
-  { key: "agentDebug", label: "Debug Console" },
-  { key: "sandbox", label: "Sandbox" },
-  { key: "avatar", label: "Avatar / Vision" }
+  { key: "sandbox", label: "Sandbox" }
 ];
 
 const LAYOUT_PRESETS = [
@@ -38,9 +35,14 @@ export default function Sidebar({
   onClearAlerts,
   onDismissAlert,
   collapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  isOpen = true,
+  onClose,
+  theme = "light",
+  onToggleTheme
 }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(() => {
     const saved = localStorage.getItem('auto_speak');
     return saved === null ? true : saved === 'true';
@@ -50,41 +52,83 @@ export default function Sidebar({
   useEffect(() => {
     localStorage.setItem('auto_speak', autoSpeak);
     localStorage.setItem('voice_gender', voiceGender);
+
+    window.dispatchEvent(new CustomEvent("synapse:voice-changed", {
+      detail: { voice: voiceGender }
+    }));
   }, [autoSpeak, voiceGender]);
 
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(Boolean(media.matches));
+    update();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", update);
+      return () => media.removeEventListener("change", update);
+    }
+    // Safari fallback
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, []);
+
+  const drawerOpen = isMobile ? Boolean(isOpen) : true;
+
   return (
-    <motion.aside
-      animate={{ width: collapsed ? '64px' : 'var(--sidebar-w)' }}
-      transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="flex flex-col shrink-0 h-full overflow-hidden z-20"
-      style={{
-        background: 'var(--color-surface)',
-        borderRight: '1px solid var(--color-background-soft)',
-      }}
-    >
-      <div className={`pt-6 pb-5 flex items-center ${collapsed ? 'flex-col gap-4' : 'px-5 gap-3.5'}`}>
-        <div className="relative w-10 h-10 flex items-center justify-center shrink-0 rounded-2xl" style={{ background: 'var(--color-primary)' }}>
-          <Sparkles size={18} className="text-white relative z-10" />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col leading-none">
-            <span className="font-display text-lg font-semibold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
-              Synapse
-            </span>
-            <span className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
-              Your AI companion
-            </span>
+    <>
+      {!collapsed && isMobile && drawerOpen && (
+        <div 
+          className="fixed inset-0 bg-black/40 z-40 md:hidden backdrop-blur-sm"
+          onClick={onClose}
+        />
+      )}
+      <motion.aside
+        animate={{
+          width: collapsed ? '64px' : (isMobile ? 'min(85vw, var(--sidebar-w))' : 'var(--sidebar-w)'),
+          x: collapsed || drawerOpen ? 0 : '-100%'
+        }}
+        transition={{ duration: 0.25, ease: 'easeInOut' }}
+        className={`flex flex-col shrink-0 h-full overflow-hidden z-50 sidebar-drawer ${drawerOpen ? 'open' : ''}`}
+        style={{
+          background: 'var(--color-surface)',
+          borderRight: '1px solid var(--color-background-soft)',
+          position: isMobile ? 'fixed' : 'relative',
+          left: isMobile ? 0 : undefined,
+          top: isMobile ? 0 : undefined,
+        }}
+      >
+        <div className={`pt-6 pb-5 flex items-center ${collapsed ? 'flex-col gap-4' : 'px-5 gap-3.5'}`}>
+          <div className="relative w-10 h-10 flex items-center justify-center shrink-0 rounded-2xl" style={{ background: 'var(--color-primary)' }}>
+            <Sparkles size={18} className="text-white relative z-10" />
           </div>
-        )}
-        <button
-          onClick={onToggleCollapse}
-          className={`p-1.5 rounded-lg transition-colors duration-200 ${collapsed ? '' : 'ml-auto'}`}
-          style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
-      </div>
+          {!collapsed && (
+            <div className="flex flex-col leading-none flex-1">
+              <span className="font-display text-lg font-semibold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
+                Synapse
+              </span>
+              <span className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
+                Your AI companion
+              </span>
+            </div>
+          )}
+          {!collapsed && onClose && isMobile && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg transition-colors duration-200 md:hidden"
+              style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
+              title="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          )}
+          <button
+            onClick={onToggleCollapse}
+            className={`p-1.5 rounded-lg transition-colors duration-200 ${collapsed ? '' : 'ml-auto'}`}
+            style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        </div>
 
       {!collapsed ? (
         <>
@@ -188,8 +232,41 @@ export default function Sidebar({
       )}
 
       <div style={{ borderTop: '1px solid var(--color-background-soft)' }}>
+        {!collapsed && onToggleTheme && (
+          <div className="px-3 pt-4 pb-2">
+            <button
+              onClick={onToggleTheme}
+              className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl transition-all warm-card-hover"
+              style={{
+                background: 'var(--color-surface-soft)',
+                border: '1px solid var(--color-background-soft)',
+                color: 'var(--color-text-secondary)'
+              }}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+              <span className="text-sm font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
+        )}
+        {collapsed && onToggleTheme && (
+          <div className="px-2 pt-2 pb-1 flex justify-center">
+            <button
+              onClick={onToggleTheme}
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-all warm-card-hover"
+              style={{
+                background: 'var(--color-surface-soft)',
+                border: '1px solid var(--color-background-soft)',
+                color: 'var(--color-text-secondary)'
+              }}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          </div>
+        )}
         {onLogout && (
-          <div className="px-3 pt-4 pb-2 flex justify-center">
+          <div className="px-3 pt-2 pb-2 flex justify-center">
             <button
               onClick={onLogout}
               className={`flex items-center justify-center rounded-xl transition-all warm-card-hover ${collapsed ? 'w-10 h-10' : 'w-full gap-2.5 py-2.5 px-4'}`}
@@ -363,5 +440,6 @@ export default function Sidebar({
         </div>
       </div>
     </motion.aside>
+    </>
   );
 }

@@ -46,7 +46,7 @@ function ToolBtn({ onClick, disabled, icon: _Icon, label, active, color, pulse }
 export default function InputBar({
   onSendMessage, onStopMessage, onStopAudio, isTyping, isSpeaking,
   disabled, suggestion, onSuggest, clearSuggestion,
-  modelPreference, onModelPreferenceChange, onOpenSandbox,
+  modelPreference, onModelPreferenceChange, customModel, onCustomModelChange, availableModels = [], onOpenSandbox,
   canRetryLastMessage, onRetryLastMessage
 }) {
   const [input, setInput] = useState("");
@@ -60,6 +60,7 @@ export default function InputBar({
     return saved === null ? true : saved === "true";
   });
   const [focused, setFocused] = useState(false);
+  const [localCustomModel, setLocalCustomModel] = useState(() => localStorage.getItem("chat_custom_model") || "");
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -76,6 +77,12 @@ export default function InputBar({
     localStorage.setItem("auto_speak", String(autoSpeak));
     if (!autoSpeak && isSpeaking) onStopAudio?.();
   }, [autoSpeak, isSpeaking, onStopAudio]);
+
+  useEffect(() => {
+    if (typeof customModel === "string" && customModel !== localCustomModel) {
+      setLocalCustomModel(customModel);
+    }
+  }, [customModel, localCustomModel]);
 
   useEffect(() => {
     if (input.length > 5 && onSuggest) {
@@ -168,10 +175,11 @@ export default function InputBar({
         return;
       }
     }
-    onSendMessage(input, fileUrl, fileType, voice, modelPreference);
+    const resolvedCustomModel = modelPreference === "custom" ? localCustomModel.trim() : "";
+    onSendMessage(input, fileUrl, fileType, voice, modelPreference, resolvedCustomModel);
     setInput(""); setFile(null); setUploadError(null); clearSuggestion?.();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, file, disabled, isUploading, isRecording, uploadFile, onSendMessage, clearSuggestion, modelPreference]);
+  }, [input, file, disabled, isUploading, isRecording, uploadFile, onSendMessage, clearSuggestion, modelPreference, localCustomModel]);
 
   const applySuggestion = useCallback(() => {
     setInput(prev => (prev + " " + (suggestion || "")).trim() + " ");
@@ -369,7 +377,7 @@ export default function InputBar({
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pt-3 pb-1">
           <input
             type="file"
             accept="image/*,application/pdf,audio/*"
@@ -432,7 +440,7 @@ export default function InputBar({
             pulse={isRecording}
           />
           {isRecording && (
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 flex-1 basis-full sm:basis-auto">
               <span className="text-xs animate-pulse" style={{ color: 'var(--color-primary)' }}>
                 Recording...
               </span>
@@ -470,29 +478,67 @@ export default function InputBar({
           />
         </div>
 
-        <div className="flex items-center justify-between px-4 pb-3 gap-2" style={{ borderTop: '1px solid var(--color-background-soft)', paddingTop: '12px' }}>
-          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
-            {Object.entries({ auto: "Auto", chat: "Chat", code: "Code", reasoning: "Reason", casual: "Fast" }).map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => onModelPreferenceChange?.(val)}
-                className={clsx(
-                  "px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-all duration-200 shrink-0",
-                  modelPreference === val 
-                    ? 'warm-card' 
-                    : 'hover:bg-[var(--color-surface-soft)]'
-                )}
-                style={modelPreference === val ? { 
-                  border: '1px solid var(--color-primary)',
-                  background: 'var(--color-primary)10',
-                  color: 'var(--color-primary)'
-                } : {
-                  color: 'var(--color-text-secondary)'
-                }}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 pb-3 gap-2" style={{ borderTop: '1px solid var(--color-background-soft)', paddingTop: '12px' }}>
+          <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
+            <select
+              value={modelPreference}
+              onChange={(e) => onModelPreferenceChange?.(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg outline-none max-w-full"
+              style={{
+                background: 'var(--color-surface-soft)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-background-soft)'
+              }}
+            >
+              <option value="auto">Auto routing</option>
+              <option value="chat">Chat</option>
+              <option value="code">Code</option>
+              <option value="reasoning">Reasoning</option>
+              <option value="casual">Fast</option>
+              <option value="custom">Manual model</option>
+            </select>
+
+            {modelPreference === "custom" && (
+              <>
+                <select
+                  value={availableModels.includes(localCustomModel) ? localCustomModel : ""}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setLocalCustomModel(next);
+                    onCustomModelChange?.(next);
+                    localStorage.setItem("chat_custom_model", next);
+                  }}
+                  className="px-2 py-1.5 text-xs rounded-lg outline-none min-w-[140px] max-w-full"
+                  style={{
+                    background: 'var(--color-surface-soft)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-background-soft)'
+                  }}
+                >
+                  <option value="">Installed models</option>
+                  {availableModels.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+
+                <input
+                  value={localCustomModel}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setLocalCustomModel(next);
+                    onCustomModelChange?.(next);
+                    localStorage.setItem("chat_custom_model", next);
+                  }}
+                  placeholder="model name"
+                  className="px-2 py-1.5 text-xs rounded-lg outline-none min-w-[120px] max-w-full"
+                  style={{
+                    background: 'var(--color-surface-soft)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-background-soft)'
+                  }}
+                />
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

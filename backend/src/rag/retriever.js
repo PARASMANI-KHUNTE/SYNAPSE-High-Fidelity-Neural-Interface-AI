@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { OllamaEmbeddings } from "@langchain/ollama";
 
-const vectorStoreCache = { instance: null, lastLoad: 0, mode: null };
+const vectorStoreCache = { instance: null, lastLoad: 0, mode: null, entryCount: 0 };
 const CACHE_TTL = 5 * 60 * 1000;
 const CHUNK_SIZE = parseInt(process.env.RAG_CHUNK_SIZE || "800", 10);
 const CHUNK_OVERLAP = parseInt(process.env.RAG_CHUNK_OVERLAP || "120", 10);
@@ -98,6 +98,23 @@ const loadFaissStore = async () => {
   return FaissStore.load(vectorstorePath, embeddings);
 };
 
+const getVectorstoreEntryCount = () => {
+  try {
+    const vectorstorePath = resolveProjectPath(process.env.VECTORSTORE_PATH || "./vectorstore");
+    const docstorePath = path.join(vectorstorePath, "docstore.json");
+    if (!fs.existsSync(docstorePath)) {
+      return 0;
+    }
+
+    const raw = fs.readFileSync(docstorePath, "utf8");
+    const parsed = JSON.parse(raw);
+    const docs = Array.isArray(parsed) ? parsed[0] : null;
+    return Array.isArray(docs) ? docs.length : 0;
+  } catch {
+    return 0;
+  }
+};
+
 const getSimilarityResults = async (query, topK) => {
   const now = Date.now();
 
@@ -106,11 +123,13 @@ const getSimilarityResults = async (query, topK) => {
       vectorStoreCache.instance = await loadFaissStore();
       vectorStoreCache.lastLoad = now;
       vectorStoreCache.mode = "faiss";
+      vectorStoreCache.entryCount = getVectorstoreEntryCount();
       console.log("[RAG] Vector store loaded/cached");
     } catch (error) {
       vectorStoreCache.instance = null;
       vectorStoreCache.lastLoad = now;
       vectorStoreCache.mode = "fallback";
+      vectorStoreCache.entryCount = 0;
       if (!hasWarnedAboutFaiss) {
         console.warn(`[RAG] FAISS unavailable, using text fallback: ${error.message}`);
         hasWarnedAboutFaiss = true;
@@ -119,7 +138,10 @@ const getSimilarityResults = async (query, topK) => {
   }
 
   if (vectorStoreCache.mode === "faiss" && vectorStoreCache.instance) {
-    return vectorStoreCache.instance.similaritySearchWithScore(query, topK * 2);
+    const desiredK = topK * 2;
+    const available = Number(vectorStoreCache.entryCount || 0);
+    const effectiveK = available > 0 ? Math.min(desiredK, available) : desiredK;
+    return vectorStoreCache.instance.similaritySearchWithScore(query, effectiveK);
   }
 
   return getFallbackResults(query, topK);
@@ -138,7 +160,10 @@ export const getRelevantDocs = async (query) => {
   );
 
   console.log(`\n[RAG] Query: "${query.substring(0, 100)}"`);
-  console.log(`[RAG] Model: ${embeddingModel} | TopK: ${topK} | MinScore: ${minScore} | MaxScore: ${maxScore}`);
+  const desiredK = topK * 2;
+  const available = Number(vectorStoreCache.entryCount || 0);
+  const effectiveK = available > 0 ? Math.min(desiredK, available) : desiredK;
+  console.log(`[RAG] Model: ${embeddingModel} | TopK: ${topK} | SearchK: ${effectiveK} | MinScore: ${minScore} | MaxScore: ${maxScore}`);
 
   const results = await getSimilarityResults(query, topK);
 

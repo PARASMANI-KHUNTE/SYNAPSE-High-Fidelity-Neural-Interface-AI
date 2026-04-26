@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js",
+    "dev": "node src/scripts/ensure-port-free.js && node --watch app.js",
+    "dev:nodemon": "node src/scripts/ensure-port-free.js && nodemon app.js",
     "test": "node tests/rag.test.js"
   },
   "keywords": [

@@ -1,4 +1,45 @@
 import Chat from "../../models/Chat.js";
+import fs from "fs";
+import path from "path";
+
+const collectUploadFilenames = (chat) => {
+  const files = new Set();
+  const uploadRegex = /\/uploads\/([^\s)"'`]+)/gi;
+
+  for (const msg of chat?.messages || []) {
+    if (msg?.audioUrl) {
+      const name = path.basename(String(msg.audioUrl));
+      if (name && name !== ".") files.add(name);
+    }
+
+    for (const imageUrl of msg?.imageUrls || []) {
+      const name = path.basename(String(imageUrl));
+      if (name && name !== ".") files.add(name);
+    }
+
+    const content = String(msg?.content || "");
+    let match;
+    while ((match = uploadRegex.exec(content)) !== null) {
+      const name = path.basename(match[1] || "");
+      if (name && name !== ".") files.add(name);
+    }
+  }
+
+  return Array.from(files);
+};
+
+const deleteUploadFile = (filename) => {
+  try {
+    const fullPath = path.join(process.cwd(), "uploads", filename);
+    fs.unlink(fullPath, (err) => {
+      if (err && err.code !== "ENOENT") {
+        console.warn(`Failed deleting upload file ${filename}:`, err.message);
+      }
+    });
+  } catch (err) {
+    console.warn(`Failed resolving upload file ${filename}:`, err.message);
+  }
+};
 
 export const sessionEvents = (io, socket) => {
   socket.on("chat:list", async () => {
@@ -31,6 +72,8 @@ export const sessionEvents = (io, socket) => {
     try {
       const deleted = await Chat.findOneAndDelete({ _id: chatId, userId });
       if (deleted) {
+        const files = collectUploadFilenames(deleted);
+        files.forEach(deleteUploadFile);
         socket.emit("chat:deleted", { chatId });
       }
     } catch (err) {

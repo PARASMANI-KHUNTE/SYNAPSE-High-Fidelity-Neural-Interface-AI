@@ -49,10 +49,16 @@ const getBaseUrl = () => config.app.baseUrl || process.env.BASE_URL || "http://l
 const sanitizeForSpeech = (text, limit = 2000) =>
   String(text || "")
     .replace(/```[\s\S]*?```/g, " [code block] ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/\*(.+?)\*/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+[.)]\s+/gm, "")
     .replace(/#+\s/g, "")
     .replace(/[`_~>]/g, "")
+    .replace(/[|]/g, " ")
     .replace(/\n+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -83,10 +89,11 @@ const humanizeForSpeech = (text, voicePref = "male") => {
   const genderAdjusted = convertHindiGenderPhrasing(text, voicePref);
   const value = sanitizeForSpeech(genderAdjusted, 3000);
   return value
-    .replace(/\b([A-Z]{2,})\b/g, "$1.")
+    .replace(/\b([A-Z]{2,})\b/g, "$1")
     .replace(/([a-z])\.([A-Z])/g, "$1. $2")
     .replace(/\s*([,;:])\s*/g, "$1 ")
     .replace(/\s*([.!?])\s*/g, "$1 ")
+    .replace(/\s*([/\\])\s*/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 };

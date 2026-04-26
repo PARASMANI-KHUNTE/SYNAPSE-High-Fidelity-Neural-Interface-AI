@@ -35,6 +35,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 let serverStarted = false;
+let serverErrorHandlerAttached = false;
 
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads", { recursive: true });
@@ -157,6 +158,27 @@ app.get("/api/config", (req, res) => {
   });
 });
 
+app.get("/api/models", async (req, res) => {
+  try {
+    const response = await fetch(`${config.ollama.baseUrl}/api/tags`, {
+      method: "GET"
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ models: [], error: "Failed to fetch model list from Ollama" });
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data?.models)
+      ? data.models.map((m) => m?.name).filter(Boolean)
+      : [];
+
+    res.json({ models });
+  } catch (err) {
+    res.status(502).json({ models: [], error: err.message || "Unable to fetch model list" });
+  }
+});
+
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/chat", requireAuth, chatLimiter, chatRoutes);
 app.use("/api/memory", requireAuth, genericLimiter, memoryRoutes);
@@ -171,10 +193,25 @@ export const startServer = () => {
     return httpServer;
   }
 
+  if (!serverErrorHandlerAttached) {
+    httpServer.on("error", (err) => {
+      if (err?.code === "EADDRINUSE") {
+        logger.error(
+          { port: config.app.port },
+          "Port is already in use. Stop the existing process or set a different PORT (tip: `npm run dev` will auto-free stale Node listeners)."
+        );
+      } else {
+        logger.error({ err }, "HTTP server failed to start");
+      }
+      process.exit(1);
+    });
+    serverErrorHandlerAttached = true;
+  }
+
   httpServer.listen(config.app.port, () => {
     logger.info({ port: config.app.port, env: config.app.nodeEnv }, "SYNAPSE server running");
-    // Asynchronously pre-warm the lightweight casual model so first response is fast
-    prewarmModel(config.ollama.model || "llama3.2:3b");
+    // Asynchronously pre-warm the configured default model so first response is fast
+    prewarmModel(config.ollama.model || "qwen2.5:7b");
 
     // Optional: prewarm heavier models to reduce first-use latency (may increase VRAM usage).
     const prewarmExtra = ["1", "true", "yes", "on"].includes(String(process.env.PREWARM_EXTRA_MODELS || "").toLowerCase());

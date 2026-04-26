@@ -1,23 +1,24 @@
 @import "tailwindcss";
 
 @theme {
-  /* Teal-Coral Warm Palette */
-  --color-primary: #2B9CA7;
-  --color-primary-soft: #88C1CD;
-  --color-background: #ECF7F8;
-  --color-background-soft: #C8E9ED;
-  --color-surface: #F7FCFD;
-  --color-surface-soft: #E6F3F5;
-  --color-accent: #E1AC98;
-  --color-text-primary: #1F2D3D;
-  --color-text-secondary: #6B7C93;
-  --color-text-muted: #A0AEC0;
+  /* Warmer Coral-Peach Palette */
+  --color-primary: #D97757;
+  --color-primary-soft: #EAB396;
+  --color-background: #FDF8F5;
+  --color-background-soft: #F5E8E0;
+  --color-surface: #FFFCFA;
+  --color-surface-soft: #FEF5EE;
+  --color-accent: #F4A574;
+  --color-accent-warm: #E89B6E;
+  --color-text-primary: #2D2520;
+  --color-text-secondary: #6B5B52;
+  --color-text-muted: #9A877D;
   
   /* Semantic Colors */
-  --color-success: #5BA67A;
-  --color-warning: #D4A574;
-  --color-error: #C47878;
-  --color-info: #7A8FA3;
+  --color-success: #7DB87D;
+  --color-warning: #E5A95E;
+  --color-error: #D98A8A;
+  --color-info: #9A8AAA;
   
   /* Typography */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -26,6 +27,50 @@
 
 :root {
   --sidebar-w: 280px;
+  color-scheme: light;
+}
+
+/* Dark Mode */
+[data-theme="dark"] {
+  --color-primary: #E89B6E;
+  --color-primary-soft: #5C4533;
+  --color-background: #1A1614;
+  --color-background-soft: #2D2623;
+  --color-surface: #252220;
+  --color-surface-soft: #302C29;
+  --color-accent: #D98A5A;
+  --color-accent-warm: #C47D4D;
+  --color-text-primary: #F5EDE8;
+  --color-text-secondary: #B8A99A;
+  --color-text-muted: #7A7068;
+  
+  --color-success: #8AC98A;
+  --color-warning: #E8B86A;
+  --color-error: #D98A8A;
+  --color-info: #A89AB8;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-primary: #E89B6E;
+    --color-primary-soft: #5C4533;
+    --color-background: #1A1614;
+    --color-background-soft: #2D2623;
+    --color-surface: #252220;
+    --color-surface-soft: #302C29;
+    --color-accent: #D98A5A;
+    --color-accent-warm: #C47D4D;
+    --color-text-primary: #F5EDE8;
+    --color-text-secondary: #B8A99A;
+    --color-text-muted: #7A7068;
+    
+    --color-success: #8AC98A;
+    --color-warning: #E8B86A;
+    --color-error: #D98A8A;
+    --color-info: #A89AB8;
+    color-scheme: dark;
+  }
 }
 
 *, *::before, *::after {
@@ -39,10 +84,15 @@ html, body {
   padding: 0;
 }
 
-#root {
-  height: 100%;
-  width: 100%;
-}
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+  }
 
 @layer base {
   body {
@@ -83,13 +133,23 @@ html, body {
   font-family: var(--font-mono) !important;
 }
 
-@layer utilities {
+  @layer utilities {
   /* Warm Panels */
   .warm-card {
     background: var(--color-surface);
     border: 1px solid var(--color-background-soft);
     border-radius: 16px;
     box-shadow: 0 2px 8px rgba(31, 45, 61, 0.04);
+  }
+
+  .scroll-to-bottom-btn {
+    bottom: 6.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .scroll-to-bottom-btn {
+      bottom: 7.5rem;
+    }
   }
 
   .warm-card-hover {
@@ -117,6 +177,97 @@ html, body {
   .hide-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Responsive utilities */
+  .sidebar-drawer {
+    z-index: 50;
+  }
+
+  @media (max-width: 767px) {
+    .sidebar-drawer {
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100%;
+      transform: translateX(-100%);
+      transition: transform 0.3s ease-in-out;
+    }
+    .sidebar-drawer.open {
+      transform: translateX(0);
+    }
+  }
+
+  @media (min-width: 768px) {
+    .sidebar-drawer {
+      position: relative;
+      transform: none !important;
+    }
+  }
+
+  .mobile-header {
+    display: none;
+  }
+
+  @media (max-width: 767px) {
+    .mobile-header {
+      display: flex;
+    }
+  }
+
+  .chat-input-mobile {
+    padding-bottom: 1rem;
+  }
+
+  @media (max-width: 767px) {
+    .chat-input-mobile {
+      padding-bottom: 0.75rem;
+    }
+  }
+
+  .responsive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 640px) {
+    .responsive-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 768px) {
+    .responsive-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .responsive-text {
+    font-size: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .responsive-text {
+      font-size: 1.125rem;
+    }
+  }
+
+  .responsive-pad-x {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .responsive-pad-x {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .responsive-pad-x {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
   }
   
   /* Scrollbar */

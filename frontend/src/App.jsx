@@ -3,14 +3,9 @@ import { io } from "socket.io-client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import SandboxPanel from "./components/SandboxPanel";
-import AgentConsole from "./components/AgentConsole";
-import AgentDebugPanel from "./components/AgentDebugPanel";
-import TriggerPanel from "./components/TriggerPanel";
-import AvatarCanvas from "./components/AvatarCanvas";
-import WebcamManager from "./components/WebcamManager";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff } from "lucide-react";
+import { WifiOff, Wifi, Loader2, Sparkles, Eye, EyeOff, Sun, Moon, Menu, X } from "lucide-react";
 import "./App.css";
 
 
@@ -131,17 +126,13 @@ function App() {
       return {
         memory: saved.memory !== false,
         statusRing: saved.statusRing !== false,
-        agentConsole: saved.agentConsole !== false,
-        agentDebug: saved.agentDebug !== false,
-        avatar: saved.avatar !== false
+        sandbox: saved.sandbox !== false
       };
     } catch {
       return {
         memory: true,
         statusRing: true,
-        agentConsole: true,
-        agentDebug: false,
-        avatar: true
+        sandbox: true
       };
     }
   });
@@ -154,6 +145,10 @@ function App() {
   const [modelPreference, setModelPreference] = useState(
     () => localStorage.getItem("chat_model_preference") || "auto"
   );
+  const [customModel, setCustomModel] = useState(
+    () => localStorage.getItem("chat_custom_model") || ""
+  );
+  const [availableModels, setAvailableModels] = useState([]);
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [chatSessions, setChatSessions] = useState([]);
   const [activeChatId, setActiveChatId] = useState(
@@ -161,16 +156,16 @@ function App() {
   );
   const [suggestion, setSuggestion] = useState("");
   const [isWaitingReply, setIsWaitingReply] = useState(false);
+  const [phaseStatus, setPhaseStatus] = useState(null);
   const [canRetryLastMessage, setCanRetryLastMessage] = useState(false);
-  const [agentTools, setAgentTools] = useState([]);
+  const [_agentTools, setAgentTools] = useState([]);
   const [agentEvents, setAgentEvents] = useState([]);
   const [pendingAgentConfirmation, setPendingAgentConfirmation] = useState(null);
   const [memoryFacts, setMemoryFacts] = useState([]);
   const [memoryProfile, setMemoryProfile] = useState(null);
   const [memoryEpisodes, setMemoryEpisodes] = useState([]);
   const [triggerAlerts, setTriggerAlerts] = useState([]);
-  const [perceptionEmotion, setPerceptionEmotion] = useState("neutral");
-  
+
 
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(ACCESS_TOKEN_KEY) || "");
   const [authUser, setAuthUser] = useState(null);
@@ -182,6 +177,12 @@ function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem("synapse_theme");
+    if (saved) return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
 
   const socketRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
@@ -203,13 +204,20 @@ function App() {
   const chunkFlushTimerRef = useRef(null);
   const suggestDebounceRef = useRef(null);
   const lastOutboundRef = useRef(null);
+  const audioStoppedByUserRef = useRef(false);
+  const audioSessionRef = useRef(0);
 
   useEffect(() => { userIdRef.current = authUser?.id || ""; }, [authUser]);
   useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
   useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   useEffect(() => { localStorage.setItem("chat_model_preference", modelPreference); }, [modelPreference]);
+  useEffect(() => { localStorage.setItem("chat_custom_model", customModel); }, [customModel]);
   useEffect(() => { localStorage.setItem("synapse_panel_prefs", JSON.stringify(panelPrefs)); }, [panelPrefs]);
   useEffect(() => { localStorage.setItem("synapse_layout_preset", activeLayoutPreset); }, [activeLayoutPreset]);
+  useEffect(() => {
+    localStorage.setItem("synapse_theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   const normalizeMediaUrl = useCallback((value) => {
     const raw = String(value || "").trim();
@@ -255,6 +263,26 @@ function App() {
       .catch(() => {});
   }, [authHeaders]);
 
+  const fetchAvailableModels = useCallback(() => {
+    fetch(`${SOCKET_URL}/api/models`, { headers: authHeaders() })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load models");
+        }
+        return response.json();
+      })
+      .then((data) => {
+        const models = Array.isArray(data?.models) ? data.models.filter(Boolean) : [];
+        setAvailableModels(models);
+        if (!customModel && models.length > 0) {
+          setCustomModel(models[0]);
+        }
+      })
+      .catch(() => {
+        setAvailableModels([]);
+      });
+  }, [authHeaders, customModel]);
+
   const clearAudioQueue = useCallback(() => {
     audioQueueRef.current = [];
     if (speakStartTimerRef.current) {
@@ -262,7 +290,13 @@ function App() {
       speakStartTimerRef.current = null;
     }
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.removeAttribute("src");
+      audioRef.current.src = "";
+      audioRef.current.load();
       audioRef.current = null;
     }
     isSpeakingRef.current = false;
@@ -306,16 +340,38 @@ function App() {
 
   const playNext = useCallback(() => {
     if (!mountedRef.current) return;
+    if (audioStoppedByUserRef.current) {
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      return;
+    }
     if (audioQueueRef.current.length === 0) {
       isSpeakingRef.current = false;
       setIsSpeaking(false);
       return;
     }
+
+    // Skip stale chunks from a previous audio session.
+    while (audioQueueRef.current.length > 0) {
+      const headSession = audioQueueRef.current[0]?.__session;
+      if (headSession == null || headSession === audioSessionRef.current) break;
+      audioQueueRef.current.shift();
+    }
+    if (audioQueueRef.current.length === 0) {
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      return;
+    }
+
     isSpeakingRef.current = true;
     setIsSpeaking(true);
+    const sessionAtStart = audioSessionRef.current;
     const audio = audioQueueRef.current.shift();
     audioRef.current = audio;
     const proceed = () => {
+      if (sessionAtStart !== audioSessionRef.current || audioStoppedByUserRef.current) {
+        return;
+      }
       if (mountedRef.current && playNextFnRef.current) {
         playNextFnRef.current();
       }
@@ -429,6 +485,7 @@ function App() {
         socketInstance.emit("chat:list");
         socketInstance.emit("agent:tools:list");
         fetchMemoryProfile();
+        fetchAvailableModels();
         if (activeChatIdRef.current) {
           socketInstance.emit("chat:history", { chatId: activeChatIdRef.current });
         }
@@ -520,6 +577,9 @@ function App() {
 
       socketInstance.on("chat:reply:start", () => {
         if (!mountedRef.current) return;
+        audioSessionRef.current += 1;
+        audioStoppedByUserRef.current = false;
+        setPhaseStatus({ phase: "thinking", emoji: "🤔", detail: "Understanding your request" });
         setIsWaitingReply(false);
         setIsTyping(true);
         setCanRetryLastMessage(false);
@@ -578,6 +638,7 @@ function App() {
 
       socketInstance.on("chat:reply:end", () => {
         if (!mountedRef.current) return;
+        setPhaseStatus({ phase: "done", emoji: "✅", detail: "Response ready" });
         flushAssistantChunks();
         isGenerationActiveRef.current = false;
         assistantMessageIdRef.current = null;
@@ -588,6 +649,7 @@ function App() {
 
       socketInstance.on("chat:stopped", () => {
         if (!mountedRef.current) return;
+        setPhaseStatus(null);
         setIsWaitingReply(false);
         flushAssistantChunks();
         pendingAssistantChunkRef.current = "";
@@ -599,6 +661,7 @@ function App() {
 
       socketInstance.on("chat:error", (data) => {
         if (!mountedRef.current) return;
+        setPhaseStatus(null);
         setIsWaitingReply(false);
         flushAssistantChunks();
         pendingAssistantChunkRef.current = "";
@@ -624,6 +687,7 @@ function App() {
 
       socketInstance.on("audio:ready", (data) => {
         if (!mountedRef.current) return;
+        if (audioStoppedByUserRef.current) return;
         const savedAutoSpeak = localStorage.getItem("auto_speak");
         const autoSpeakEnabled = savedAutoSpeak === null ? true : savedAutoSpeak === "true";
         if (autoSpeakEnabled && data?.url) {
@@ -634,6 +698,7 @@ function App() {
             audio.preload = "auto";
             audio.src = audioUrl;
             audio.load();
+            audio.__session = audioSessionRef.current;
             audioQueueRef.current.push(audio);
 
             if (!isSpeakingRef.current && playNextFnRef.current) {
@@ -664,9 +729,17 @@ function App() {
         setTriggerAlerts(prev => [...prev.slice(-20), { ...data, id: `trigger-${Date.now()}` }]);
       });
 
-      socketInstance.on("perception:update", (data) => {
-        if (!mountedRef.current) return;
-        if (data?.emotion) setPerceptionEmotion(data.emotion);
+      socketInstance.on("chat:phase", (data) => {
+        if (!mountedRef.current || !data?.phase) return;
+        setPhaseStatus({
+          phase: String(data.phase),
+          emoji: String(data.emoji || ""),
+          detail: String(data.detail || "")
+        });
+      });
+
+      socketInstance.emit("voice:update", {
+        voice: localStorage.getItem("voice_gender") || "male"
       });
     };
 
@@ -700,25 +773,58 @@ function App() {
       if (newSocket) { newSocket.removeAllListeners(); newSocket.disconnect(); }
       clearAudioQueue();
     };
-  }, [accessToken, clearAudioQueue, scheduleReconnect, clearAuthSession, pushAgentEvent, fetchMemoryProfile, flushAssistantChunks, normalizeMediaUrl]);
+  }, [accessToken, clearAudioQueue, scheduleReconnect, clearAuthSession, pushAgentEvent, fetchMemoryProfile, fetchAvailableModels, flushAssistantChunks, normalizeMediaUrl]);
 
-  const handleStopAudio = useCallback(() => clearAudioQueue(), [clearAudioQueue]);
+  const handleStopAudio = useCallback(() => {
+    audioSessionRef.current += 1;
+    audioStoppedByUserRef.current = true;
+    clearAudioQueue();
+  }, [clearAudioQueue]);
 
-  const handleSendMessage = useCallback((content, fileUrl, fileType, voice, selectedModel) => {
+  useEffect(() => {
+    const onVoiceChanged = (event) => {
+      const nextVoice = event?.detail?.voice || localStorage.getItem("voice_gender") || "male";
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("voice:update", { voice: nextVoice });
+      }
+    };
+
+    window.addEventListener("synapse:voice-changed", onVoiceChanged);
+    return () => window.removeEventListener("synapse:voice-changed", onVoiceChanged);
+  }, []);
+
+  const handleSendMessage = useCallback((content, fileUrl, fileType, voice, selectedModel, selectedCustomModel) => {
+    const cleanContent = String(content || "").trim();
     const payload = {
       chatId: activeChatId,
-      message: content,
+      message: cleanContent,
       fileUrl,
       fileType,
       voicePreference: voice,
       modelPreference: selectedModel || modelPreference,
+      customModel: (selectedModel || modelPreference) === "custom"
+        ? String(selectedCustomModel || customModel || "").trim()
+        : "",
     };
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: cleanContent,
+        imageUrls: fileType === "image" && fileUrl ? [normalizeMediaUrl(fileUrl)] : [],
+        audioUrl: fileType === "audio" ? normalizeMediaUrl(fileUrl) : "",
+        id: `local_user_${Date.now()}`
+      }
+    ]);
+
     lastOutboundRef.current = payload;
     if (socketRef.current?.connected) {
+      setPhaseStatus({ phase: "thinking", emoji: "🤔", detail: "Understanding your request" });
       setIsWaitingReply(true);
       socketRef.current.emit("chat:message", payload);
     }
-  }, [activeChatId, modelPreference]);
+  }, [activeChatId, modelPreference, customModel, normalizeMediaUrl]);
 
   const handleRetryLastMessage = useCallback(() => {
     if (!lastOutboundRef.current || !socketRef.current?.connected) return;
@@ -748,6 +854,7 @@ function App() {
 
   const handleStopMessage = useCallback(() => {
     if (socketRef.current?.connected) socketRef.current.emit("chat:stop");
+    setPhaseStatus(null);
     isGenerationActiveRef.current = false;
     setIsTyping(false);
     handleStopAudio();
@@ -779,9 +886,9 @@ function App() {
 
   const handleApplyLayoutPreset = useCallback((preset) => {
     const presets = {
-      focus: { memory: false, statusRing: true, agentConsole: false, sandbox: false, avatar: false },
-      dev: { memory: true, statusRing: true, agentConsole: true, sandbox: true, avatar: true },
-      mission: { memory: true, statusRing: true, agentConsole: true, sandbox: false, avatar: true }
+      focus: { memory: false, statusRing: true, sandbox: false },
+      dev: { memory: true, statusRing: true, sandbox: true },
+      mission: { memory: true, statusRing: true, sandbox: false }
     };
     const nextPrefs = presets[preset];
     if (nextPrefs) {
@@ -791,7 +898,7 @@ function App() {
     }
   }, [isSandboxOpen]);
 
-  const handleRunAgentTool = useCallback((tool, params) => {
+  const _handleRunAgentTool = useCallback((tool, params) => {
     if (!socketRef.current?.connected) return;
     socketRef.current.emit("agent:run", {
       tool,
@@ -800,19 +907,19 @@ function App() {
     });
   }, [activeChatId, authUser]);
 
-  const handleConfirmAgentTool = useCallback((token) => {
+  const _handleConfirmAgentTool = useCallback((token) => {
     if (!socketRef.current?.connected) return;
     socketRef.current.emit("agent:confirm", { token });
     setPendingAgentConfirmation(null);
   }, []);
 
-  const handleCancelAgentTool = useCallback((token) => {
+  const _handleCancelAgentTool = useCallback((token) => {
     if (!socketRef.current?.connected) return;
     socketRef.current.emit("agent:cancel", { token });
     setPendingAgentConfirmation(null);
   }, []);
 
-  const handleClearAgentEvents = useCallback(() => setAgentEvents([]), []);
+  const _handleClearAgentEvents = useCallback(() => setAgentEvents([]), []);
   const handleClearAlerts = useCallback(() => setTriggerAlerts([]), []);
   const handleDismissAlert = useCallback((id) => setTriggerAlerts(prev => prev.filter(a => (a._id || a.id) !== id)), []);
 
@@ -909,7 +1016,7 @@ function App() {
   return (
     <ErrorBoundary>
       <ConnectionToast isConnected={isConnected} connectionError={connectionError} />
-      <div className="flex h-screen w-full overflow-hidden relative" style={{ zIndex: 1 }}>
+      <div className="flex w-full overflow-hidden relative app-shell" style={{ zIndex: 1 }}>
         <Sidebar
           sessions={chatSessions}
           activeChatId={activeChatId}
@@ -930,18 +1037,37 @@ function App() {
           onDismissAlert={handleDismissAlert}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          theme={theme}
+          onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
         />
 
-        <main className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative">
+        <main className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative pt-14 md:pt-0">
+          <div className="mobile-header absolute top-0 left-0 right-0 h-14 px-4 flex items-center md:hidden z-30" style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-background-soft)' }}>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 -ml-2 rounded-lg"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              <Menu size={20} />
+            </button>
+            <span className="ml-3 font-display font-semibold" style={{ color: 'var(--color-text-primary)' }}>Synapse</span>
+          </div>
           <ChatWindow
             messages={messages}
             isTyping={isTyping}
             isWaitingReply={isWaitingReply}
+            isSpeaking={isSpeaking}
+            phaseStatus={phaseStatus}
             onSendMessage={handleSendMessage}
             operatorName={operatorName}
             suggestion={suggestion}
             modelPreference={modelPreference}
-            onModelChange={setModelPreference}
+            onModelPreferenceChange={setModelPreference}
+            customModel={customModel}
+            onCustomModelChange={setCustomModel}
+            availableModels={availableModels}
             canRetryLastMessage={canRetryLastMessage}
             onRetryLastMessage={handleRetryLastMessage}
             onStopMessage={handleStopMessage}
@@ -953,45 +1079,6 @@ function App() {
             agentEvents={agentEvents}
             pendingAgentConfirmation={pendingAgentConfirmation}
           />
-
-          <AnimatePresence>
-            {panelPrefs.agentConsole && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-4 bottom-24 w-96 z-30">
-                <AgentConsole isOpen={true} agentEvents={agentEvents} pendingConfirmation={pendingAgentConfirmation} />
-              </motion.div>
-            )}
-            {panelPrefs.agentDebug && (
-               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="absolute right-4 bottom-24 w-96 z-40 bg-surface/90 backdrop-blur rounded-2xl overflow-hidden soft-shadow-xl border border-primary/20">
-                  <AgentDebugPanel 
-                    onRunTool={handleRunAgentTool} 
-                    tools={agentTools} 
-                    events={agentEvents} 
-                    onClearEvents={handleClearAgentEvents}
-                    onConfirmTool={handleConfirmAgentTool}
-                    onCancelTool={handleCancelAgentTool}
-                    currentEmotion={perceptionEmotion}
-                    onSetEmotion={(e) => {
-                      setPerceptionEmotion(e);
-                      if (socketRef.current?.connected) socketRef.current.emit("perception:manual_emotion", { emotion: e });
-                    }}
-                  />
-               </motion.div>
-            )}
-            {panelPrefs.avatar && (
-              <AvatarCanvas 
-                isTyping={isTyping} 
-                isSpeaking={isSpeaking} 
-                emotion={perceptionEmotion}
-              />
-            )}
-          </AnimatePresence>
-
-          {panelPrefs.avatar && (
-            <WebcamManager 
-              socket={socketRef.current} 
-              isActive={true} 
-            />
-          )}
         </main>
 
         <SandboxPanel isOpen={isSandboxOpen} onClose={() => setIsSandboxOpen(false)} />

@@ -1,5 +1,5 @@
 const getOllamaModel = (hasImages) =>
-  hasImages ? (process.env.OLLAMA_VISION_MODEL || "llava") : (process.env.OLLAMA_MODEL || "llama3");
+  hasImages ? (process.env.OLLAMA_VISION_MODEL || "llava") : (process.env.OLLAMA_MODEL || "qwen2.5:7b");
 
 const getOllamaBaseUrl = () => process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 
@@ -8,7 +8,7 @@ const MAX_RETRIES = parseInt(process.env.OLLAMA_MAX_RETRIES) || 3;
 const RETRY_DELAY = parseInt(process.env.OLLAMA_RETRY_DELAY) || 2000;
 
 const getCasualModelName = () =>
-  process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "llama3.2:3b";
+  process.env.OLLAMA_CASUAL_MODEL || process.env.OLLAMA_MODEL || "qwen2.5:7b";
 
 const readInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -68,7 +68,7 @@ export async function generateResponseStream(messages, onChunk, abortSignal, mod
   const hasImages = Boolean(lastMessage && lastMessage.images && lastMessage.images.length > 0);
 
   const primaryModel = modelOverride || getOllamaModel(hasImages);
-  const fallbackModel = process.env.OLLAMA_MODEL || "llama3.2:1b";
+  const fallbackModel = process.env.OLLAMA_MODEL || "qwen2.5:7b";
   const modelsToTry = hasImages
     ? [primaryModel]
     : primaryModel !== fallbackModel
@@ -193,6 +193,7 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: abortSignal,
       body: JSON.stringify({
         model,
         messages: safeMessages,
@@ -220,7 +221,8 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
     while (true) {
       if (abortSignal?.aborted) {
         console.log("[Abort] Stream manually stopped");
-        return fullContent;
+        await reader.cancel().catch(() => {});
+        throw Object.assign(new Error("Generation aborted"), { type: "aborted", name: "AbortError" });
       }
 
       const { done, value } = await reader.read();
@@ -231,7 +233,8 @@ const callOllamaStreamWithModel = async (messages, onChunk, model, abortSignal) 
 
       for (const line of lines) {
         if (abortSignal?.aborted) {
-          return fullContent;
+          await reader.cancel().catch(() => {});
+          throw Object.assign(new Error("Generation aborted"), { type: "aborted", name: "AbortError" });
         }
 
         try {
