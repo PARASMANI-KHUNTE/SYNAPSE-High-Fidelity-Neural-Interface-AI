@@ -18,8 +18,9 @@ const HIGH_PERFORMANCE_BEHAVIOR = [
   "- Identify user intent (question, action, explanation, casual) and adapt response style.",
   "- Use memory only when it improves relevance; avoid unrelated recall.",
   "- If external or up-to-date facts are required, rely on available retrieval/search context.",
+  "- NEVER use phrases like 'as of my knowledge cutoff', 'my knowledge is limited to', or 'cutoff of 2023'.",
+  "- If you don't have current info and search failed, simply say 'I couldn't find recent verified information on that.'",
   "- Never fabricate titles, dates, releases, or events. If unverified, state that clearly.",
-  "- Never use phrases like 'as of my knowledge cutoff'.",
   "- Do not fabricate facts. If uncertain, say so and suggest next steps.",
   "- Stay on-topic and avoid unnecessary filler.",
   "- Self-check before finalizing: relevance, clarity, conciseness, no hallucinations."
@@ -241,17 +242,18 @@ export const buildChatMessages = ({
   if (!hasVisualInput && requiresLiveData) {
     systemParts.push(
       "",
-      "Real-Time Data Rules (strict):",
-      "- Do NOT claim you searched the web unless Web Search Context is present.",
-      "- If no Web Search Context is present, explicitly say you do not have verified live access right now.",
-      "- For live/news answers, use only Web Search Context for factual claims.",
-      "- Prioritize global-impact diversity across geopolitics, economy/markets, technology/science, and policy.",
+      "🛡️ REAL-TIME GROUNDING RULES (STRICT):",
+      "- If 'Web Search Context' is provided, you MUST use it as your PRIMARY source of truth.",
+      "- DO NOT use your internal knowledge to contradict or augment the Web Search Context for time-sensitive facts (dates, prices, news).",
+      "- If the 'Web Search Context' does NOT contain the answer, explicitly state: 'The real-time search did not provide enough information to verify this.'",
+      "- NEVER hallucinate sources, URLs, or news details.",
+      "- Use a professional, objective tone when summarizing external reports.",
       "- Output concise bullets only in this format per item:",
       "  Headline | Where | When | Source (URL)",
       "- Include a short 'As of <date>' line before the list."
     );
     if (!liveDataAvailable) {
-      systemParts.push("- Since live data is unavailable for this turn, do not provide a fake live roundup.");
+      systemParts.push("- CRITICAL: Since live data search failed for this turn, you MUST inform the user that you do not have current access and can only provide information from your training data.");
     }
   }
 

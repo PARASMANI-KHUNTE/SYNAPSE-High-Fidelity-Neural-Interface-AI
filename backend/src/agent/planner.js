@@ -191,6 +191,19 @@ export const decompose = async ({ message = "" } = {}) => {
     );
   }
 
+  // Detect real-time / external data needs
+  const REALTIME_KEYWORDS = /\b(latest|today|current|news|update|version|price|weather|score|who is|what is the status of)\b/i;
+  const WEB_SEARCH_PHRASES = /\b(search the (web|internet)|look up|find online|browse for)\b/i;
+
+  if (REALTIME_KEYWORDS.test(trimmed) || WEB_SEARCH_PHRASES.test(trimmed)) {
+    return buildSingleTaskPlan(
+      "web_search",
+      { query: trimmed },
+      trimmed,
+      "Searching the internet for real-time information"
+    );
+  }
+
   return {
     isAgentic: false,
     tasks: []

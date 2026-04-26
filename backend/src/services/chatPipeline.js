@@ -19,6 +19,9 @@ import { generalCache, searchCache, getCacheKey } from "./cache.js";
 import config from "../config/env.js";
 import perceptionService from "./perceptionService.js";
 import { resolveExternalData } from "./externalDataRouter.js";
+import { searchWeb } from "./webSearchService.js";
+import { scrapeMultiple } from "./webScraper.js";
+import { classifyRealityIntent } from "./realityEngine.js";
 import { verifyClaims } from "./factVerification.js";
 import { evaluateQuality, shouldRequestCorrection } from "./qualityEvaluator.js";
 
@@ -122,7 +125,7 @@ const buildSearchQuery = (message = "", liveRequired = false) => {
   if (MOVIE_RELEASE_PATTERNS.every((pattern) => pattern.test(base))) {
     return `${base} latest movie releases this week source imdb rotten tomatoes variety deadline hollywood reporter`;
   }
-  return `${base} latest world news today economy markets technology policy science site:reuters.com OR site:apnews.com OR site:bbc.com OR site:ft.com`;
+  return `${base} latest news update source info`;
 };
 
 const formatSearchContext = (results = []) => {
@@ -920,12 +923,13 @@ export const processStandardChatTurn = async ({
     let searchContext = "";
     let searchResults = [];
     let liveDataAvailable = false;
-    if (shouldSearchInternet({
-      message: trimmedMessage,
-      actualFileType,
-      hasImages
-    })) {
-      emitPhase(socket, "scraping", "🌐", "Checking real-time web data");
+
+    // Use Reality Engine to decide if search is required
+    const realityIntent = await classifyRealityIntent(trimmedMessage);
+    const adaptiveShouldSearch = realityIntent === "REALTIME";
+
+    if (adaptiveShouldSearch && !actualFileType && !hasImages) {
+      emitPhase(socket, "scraping", "🌐", "Reality Engine: Activating Real-Time Research");
       const searchKey = getCacheKey("search", trimmedMessage);
       if (searchCache.has(searchKey)) {
         const cached = searchCache.get(searchKey);
@@ -938,11 +942,21 @@ export const processStandardChatTurn = async ({
         }
       } else {
         const queryForSearch = buildSearchQuery(trimmedMessage, liveDataRequired);
-        const searchJob = await addChatJob({ type: "web-search", payload: { query: queryForSearch } });
-        const results = await searchJob.waitUntilFinished();
-        if (results && results.length > 0) {
-          searchResults = Array.isArray(results) ? results : [];
-          searchContext = formatSearchContext(results);
+        // Using the new webSearchService
+        const links = await searchWeb(queryForSearch);
+        
+        if (links && links.length > 0) {
+          searchResults = links;
+          
+          // Optionally scrape top results for standard turn too
+          const urlsToScrape = links.slice(0, 2).map(l => l.link);
+          const scraped = await scrapeMultiple(urlsToScrape);
+          
+          searchContext = links.map((l, i) => {
+            const content = scraped[i] ? `\nContent: ${scraped[i].substring(0, 1000)}` : "";
+            return `Source: ${l.link}\nTitle: ${l.title}\nSnippet: ${l.snippet}${content}`;
+          }).join("\n\n");
+
           liveDataAvailable = true;
           searchCache.set(searchKey, {
             context: searchContext,
@@ -955,7 +969,10 @@ export const processStandardChatTurn = async ({
     }
 
     if ((liveDataRequired || freshnessIntent) && !searchContext && !external.liveDataAvailable) {
-      console.warn("⚠️ Real-time data requested but search returned no results. Proceeding with internal knowledge.");
+      socket.emit("chat:data_status", {
+        realtime: false,
+        warning: "I couldn't fetch live data for this query. Responses are based on model knowledge which may be outdated."
+      });
     }
 
     if (liveDataRequired && liveDataAvailable && searchResults.length > 0) {
@@ -1024,6 +1041,15 @@ export const processStandardChatTurn = async ({
       abortSignal,
       selectedModel
     );
+
+    // Task 7: Add Source Attribution
+    if (searchResults && searchResults.length > 0 && fullReply.trim()) {
+      const uniqueSources = [...new Set(searchResults.map(s => s.link))].slice(0, 3);
+      const sourcesList = `\n\n**Sources:**\n${uniqueSources.map(url => `- [${new URL(url).hostname}](${url})`).join("\n")}`;
+      
+      socket.emit("chat:reply:chunk", { chunk: sourcesList });
+      fullReply += sourcesList;
+    }
 
     const streamedAudio = streamingTts ? await streamingTts.flush() : false;
 

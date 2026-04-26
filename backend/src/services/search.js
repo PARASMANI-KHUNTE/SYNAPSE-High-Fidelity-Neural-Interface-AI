@@ -1,6 +1,8 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { isInternalHostname } from "../utils/networkSecurity.js";
+import wikipedia from "./wikipedia.js";
+const { fetchWikipediaSummary, fetchDuckDuckGoInstant } = wikipedia;
 
 const SEARCH_TIMEOUT = 15000;
 const MAX_RESULTS = 5;
@@ -38,6 +40,18 @@ export const searchInternet = async (query) => {
   }
 
   let lastError;
+  
+  const reliableResults = await fetchWikipediaSummary(sanitizedQuery);
+  if (reliableResults.length > 0) {
+    console.log(`✅ Neural Research: Found ${reliableResults.length} results from Wikipedia`);
+    return reliableResults;
+  }
+
+  const instantResults = await fetchDuckDuckGoInstant(sanitizedQuery);
+  if (instantResults.length > 0) {
+    console.log(`✅ Neural Research: Found ${instantResults.length} results from DuckDuckGo Instant API`);
+    return instantResults;
+  }
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {

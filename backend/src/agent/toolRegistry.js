@@ -3,6 +3,7 @@ import gitTool from "../tools/git.js";
 import filesystemTool from "../tools/filesystem.js";
 import screenshotTool from "../tools/screenshot.js";
 import terminalTool from "../tools/terminal.js";
+import webSearchTool from "../tools/webSearchTool.js";
 
 const tools = new Map();
 
@@ -20,6 +21,7 @@ registerTool(gitTool);
 registerTool(filesystemTool);
 registerTool(screenshotTool);
 registerTool(terminalTool);
+registerTool(webSearchTool);
 
 export const getTool = (name) => tools.get(String(name || "").trim());
 
