@@ -1,5 +1,7 @@
 # Synapse System Design Report (2026-04-16)
 
+> 🚀 **Interactive Experience**: For an interactive visual version with live flow simulator, API playground, and audio feedback, open [`Docs/index.html`](file:///f:/Codes/Projects/Complete%20full%20stack%20projects/Synapse/Docs/index.html) in your browser.
+
 This folder is a generated, code-backed system-design report for the Synapse repository as of **2026-04-16**.
 
 If you want the most compact “single doc” view first, start with:

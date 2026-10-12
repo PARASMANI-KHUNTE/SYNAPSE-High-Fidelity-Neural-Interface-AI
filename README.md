@@ -1,5 +1,7 @@
 # 🧠 SYNAPSE: High-Fidelity Neural Interface AI
 
+> 🌐 **Interactive Documentation Portal**: Open [`Docs/index.html`](file:///f:/Codes/Projects/Complete%20full%20stack%20projects/Synapse/Docs/index.html) in your browser for a live, interactive documentation experience featuring an **Architecture Flow Simulator**, **API & Socket Playground**, **Viva/QA Flashcard Bank**, and **Presentation Stage Mode**!
+
 **SYNAPSE** is a premium, high-performance AI assistant ecosystem designed for deep research, multi-modal interaction, and real-time computation. It bridges the gap between local hardware performance and advanced agentic intelligence through a modular, high-fidelity neural architecture.
 
 ---
@@ -136,12 +138,44 @@ Tests: *Integrity, OOD Rejection, Context Override, Prompt Strength, Relevance F
 
 ---
 
-## Documentation
+## 🌐 Interactive Documentation & System Design Portal
 
-- Current implementation status and progress report: [Docs/IMPLEMENTATION_REPORT.md](Docs/IMPLEMENTATION_REPORT.md)
-- Architecture overview: [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md)
-- Full system-design report pack (architecture, HLD/LLD, data flows, features, security, ops): [Docs/Reports/2026-04-16-system-design/README.md](Docs/Reports/2026-04-16-system-design/README.md)
-- Roadmap: [Docs/ROADMAP.md](Docs/ROADMAP.md)
-- Changelog: [Docs/CHANGELOG.md](Docs/CHANGELOG.md)
-- Testing and verification guide: [Docs/TESTING_GUIDE.md](Docs/TESTING_GUIDE.md)
+SYNAPSE includes a **fully interactive, web-based documentation application** (`HTML/CSS/JS`) with rich animations, live flow simulations, and presentation tools:
+
+👉 **Launch immediately**: Open [`Docs/index.html`](Docs/index.html) in any web browser *(no build step required)*.
+
+### 🌟 What's Inside the Interactive Portal:
+- 🧠 **Architecture Flow Simulator**:
+  - Interactive SVG canvas of all system nodes (`Frontend`, `Gateway`, `Pipeline`, `Ollama`, `MongoDB`, `FAISS`, `Sandboxed Tools`).
+  - Click any node to inspect real-time metrics, ports, protocols, and implementation file references.
+  - Run live animations: **Simulate Chat Stream**, **Simulate Tool Gate**, and **Simulate RAG Retrieval** with real-time streaming logs.
+- ⚡ **REST & Socket.IO API Playground**:
+  - Interactive workbench for `/health`, `/metrics`, `/api/auth/login`, `/api/sandbox`, and `chat:message`.
+  - Live simulation button with response payloads, latency counter, and 1-click JSON copy.
+- 🎯 **Interactive Viva & QA Question Bank (60+ Questions)**:
+  - Filterable by topic: *Pitch & Vision*, *Architecture & Systems*, *Memory & RAG*, *Agent & Security*, *Operations*.
+  - **Two Modes**: *Reader List Mode* (with defense anchors) & *Flashcard Quiz Mode* (flip card to test your answers).
+- 🎙️ **Presentation Stage & Teleprompter**:
+  - Slide deck for project demos, viva defense, and faculty reviews with target speaking timers and speaker teleprompter cues.
+- 🧪 **Testing Verification Checklist**:
+  - Real-time checklist with progress tracking saved in browser `localStorage`.
+- 🎨 **Obsidian Cyberpunk UI System**:
+  - Theme toggler: **Cyber Obsidian Neon**, **Laboratory Clean Light**, and **Midnight OLED**.
+  - Animated synaptic particle mesh canvas (60fps).
+  - Optional synthesized audio effects (Web Audio API) for clicks, simulations, and tab switching.
+  - Global omni-search modal with **`Ctrl + K`** shortcut.
+
+---
+
+## 📚 Documentation Reference
+
+- **Interactive Web Portal**: [`Docs/index.html`](Docs/index.html) *(Recommended)*
+- **Implementation Status Report**: [`Docs/IMPLEMENTATION_REPORT.md`](Docs/IMPLEMENTATION_REPORT.md)
+- **Architecture Overview**: [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md)
+- **System-Design Report Pack (11 Chapters)**: [`Docs/Reports/2026-04-16-system-design/README.md`](Docs/Reports/2026-04-16-system-design/README.md)
+- **Evolution Roadmap**: [`Docs/ROADMAP.md`](Docs/ROADMAP.md)
+- **Changelog**: [`Docs/CHANGELOG.md`](Docs/CHANGELOG.md)
+- **Testing & Verification Guide**: [`Docs/TESTING_GUIDE.md`](Docs/TESTING_GUIDE.md)
+- **Project Question Bank**: [`Docs/PROJECT_QA_BANK.md`](Docs/PROJECT_QA_BANK.md)
+- **Presentation Script**: [`Docs/PRESENTATION_SCRIPT.md`](Docs/PRESENTATION_SCRIPT.md)
 
